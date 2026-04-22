@@ -17,6 +17,7 @@ const db = createClient(SUPABASE_URL, SUPABASE_ANON);
 
 // ── State ────────────────────────────────────────────────────────────────────
 let currentUser = localStorage.getItem('essen_user') || null;
+let currentWeek = 0; // 0 = this week, 1 = next week
 let meals   = new Map(); // "YYYY-MM-DD-lunch/dinner" → meal object
 let ratings = new Map(); // meal_id → Map(person_name → rating)
 
@@ -48,9 +49,10 @@ function formatDay(dateStr) {
   return d.toLocaleDateString('de-AT', { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
-function isToday(dateStr) { return dateStr === toISODate(new Date()); }
-function isPast(dateStr)  { return dateStr < toISODate(new Date()); }
-function isEditor()       { return EDITORS.includes(currentUser); }
+function isToday(dateStr)   { return dateStr === toISODate(new Date()); }
+function isPast(dateStr)    { return dateStr < toISODate(new Date()); }
+function isEditor()         { return EDITORS.includes(currentUser); }
+function isWeekend(dateStr) { const d = new Date(dateStr + 'T12:00:00'); return d.getDay() === 0 || d.getDay() === 6; }
 
 function escapeHtml(str) {
   if (!str) return '';
@@ -104,6 +106,15 @@ starEls.forEach(s => {
   s.addEventListener('click', () => {
     const v = Number(s.dataset.v);
     setStars(selectedRating === v ? 0 : v);
+  });
+});
+
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    currentWeek = Number(btn.dataset.week);
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+    renderCalendar();
   });
 });
 
@@ -233,26 +244,19 @@ deleteBtn.addEventListener('click', async () => {
 // ── Render calendar ───────────────────────────────────────────────────────────
 function renderCalendar() {
   calendarEl.innerHTML = '';
-  const today  = new Date();
-  const monday = mondayOf(today);
+  const today     = new Date();
+  const monday    = mondayOf(today);
+  const weekStart = addDays(monday, currentWeek * 7);
 
-  for (let w = 0; w < 2; w++) {
-    const weekStart = addDays(monday, w * 7);
-    const weekLabel = w === 0 ? 'This week' : 'Next week';
-
-    const weekHeader = document.createElement('div');
-    weekHeader.className = 'week-header';
-    weekHeader.textContent = weekLabel;
-    calendarEl.appendChild(weekHeader);
-
-    for (let d = 0; d < 7; d++) {
+  for (let d = 0; d < 7; d++) {
       const date    = addDays(weekStart, d);
       const dateStr = toISODate(date);
       const past    = isPast(dateStr);
       const today_  = isToday(dateStr);
+      const weekend = isWeekend(dateStr);
 
       const dayEl = document.createElement('div');
-      dayEl.className = 'day' + (today_ ? ' today' : '') + (past ? ' past' : '');
+      dayEl.className = 'day' + (today_ ? ' today' : '') + (past ? ' past' : '') + (weekend ? ' weekend' : '');
 
       const dayLabel = document.createElement('div');
       dayLabel.className = 'day-label';
@@ -307,13 +311,12 @@ function renderCalendar() {
       });
 
       calendarEl.appendChild(dayEl);
-    }
   }
 }
 
 // ── Load ──────────────────────────────────────────────────────────────────────
 async function loadMeals() {
-  const monday  = toISODate(mondayOf(new Date()));
+  const monday  = toISODate(addDays(mondayOf(new Date()), -7));
   const endDate = toISODate(addDays(mondayOf(new Date()), 13));
 
   const { data, error } = await db
