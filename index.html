@@ -160,6 +160,11 @@
       font-size: 1rem; font-weight: 600; cursor: pointer;
     }
 
+    /* Dish display for non-editors */
+    .meal-dish-display { font-size: 1.1rem; font-weight: 600; color: var(--gray-900); margin-bottom: 14px; }
+    .meal-dish-display.hidden { display: none; }
+    #edit-fields.hidden { display: none; }
+
     /* Stars */
     .rating-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
     .rating-label { font-size: .75rem; font-weight: 700; color: var(--gray-400); text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
@@ -201,44 +206,50 @@
   <div id="meal-modal" class="modal-backdrop hidden">
     <div class="modal">
       <h2 id="modal-title"></h2>
-      <div class="status-row">
-        <button class="status-btn active" data-status="scratch">
-          <span class="status-emoji">👩‍🍳</span><span>Cooking</span>
-        </button>
-        <button class="status-btn" data-status="defrost">
-          <span class="status-emoji">❄️</span><span>Defrost</span>
-        </button>
-        <button class="status-btn" data-status="soulkitchen">
-          <span class="status-emoji">🥡</span><span>Soulkitchen</span>
-        </button>
-        <button class="status-btn" data-status="eating_out">
-          <span class="status-emoji">🍴</span><span>Eating out</span>
-        </button>
+      <!-- Read-only dish name shown to non-editors -->
+      <div id="meal-dish-display" class="meal-dish-display hidden"></div>
+      <!-- Edit fields: editors only -->
+      <div id="edit-fields">
+        <div class="status-row">
+          <button class="status-btn active" data-status="scratch">
+            <span class="status-emoji">👩‍🍳</span><span>Cooking</span>
+          </button>
+          <button class="status-btn" data-status="defrost">
+            <span class="status-emoji">❄️</span><span>Defrost</span>
+          </button>
+          <button class="status-btn" data-status="soulkitchen">
+            <span class="status-emoji">🥡</span><span>Soulkitchen</span>
+          </button>
+          <button class="status-btn" data-status="eating_out">
+            <span class="status-emoji">🍴</span><span>Eating out</span>
+          </button>
+        </div>
+        <input id="dish-input" type="text" placeholder="Dish name…" autocomplete="off" />
+        <textarea id="notes-input" placeholder="Notes (optional)…"></textarea>
+        <div class="attend-section">
+          <div class="attend-label">Who's joining?</div>
+          <div class="attend-names">
+            <button class="attend-btn" data-name="Astrid">Astrid</button>
+            <button class="attend-btn" data-name="Niko">Niko</button>
+            <button class="attend-btn" data-name="Max">Max</button>
+            <button class="attend-btn" data-name="Alex">Alex</button>
+            <button class="attend-btn" data-name="Vicky">Vicky</button>
+          </div>
+          <div class="guests-row">
+            <label for="guest-count">+ Guests</label>
+            <input type="number" id="guest-count" min="0" max="20" value="0" />
+          </div>
+        </div>
       </div>
-      <input id="dish-input" type="text" placeholder="Dish name…" autocomplete="off" />
-      <textarea id="notes-input" placeholder="Notes (optional)…"></textarea>
+      <!-- Rating: visible to everyone -->
       <div class="rating-row">
-        <span class="rating-label">Rating</span>
+        <span class="rating-label">Your rating</span>
         <div class="stars" id="star-input">
           <span class="star" data-v="1">★</span>
           <span class="star" data-v="2">★</span>
           <span class="star" data-v="3">★</span>
           <span class="star" data-v="4">★</span>
           <span class="star" data-v="5">★</span>
-        </div>
-      </div>
-      <div class="attend-section">
-        <div class="attend-label">Who's joining?</div>
-        <div class="attend-names">
-          <button class="attend-btn" data-name="Astrid">Astrid</button>
-          <button class="attend-btn" data-name="Niko">Niko</button>
-          <button class="attend-btn" data-name="Max">Max</button>
-          <button class="attend-btn" data-name="Alex">Alex</button>
-          <button class="attend-btn" data-name="Vicky">Vicky</button>
-        </div>
-        <div class="guests-row">
-          <label for="guest-count">+ Guests</label>
-          <input type="number" id="guest-count" min="0" max="20" value="0" />
         </div>
       </div>
       <div class="modal-actions">

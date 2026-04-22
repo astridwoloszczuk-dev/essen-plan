@@ -17,13 +17,14 @@ const db = createClient(SUPABASE_URL, SUPABASE_ANON);
 
 // ── State ────────────────────────────────────────────────────────────────────
 let currentUser = localStorage.getItem('essen_user') || null;
-let meals = new Map(); // "YYYY-MM-DD-lunch/dinner" → meal object
+let meals   = new Map(); // "YYYY-MM-DD-lunch/dinner" → meal object
+let ratings = new Map(); // meal_id → Map(person_name → rating)
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function mondayOf(date) {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
-  const day = d.getDay(); // 0=Sun, 1=Mon ... 6=Sat
+  const day = d.getDay();
   const diff = day === 0 ? -6 : 1 - day;
   d.setDate(d.getDate() + diff);
   return d;
@@ -47,17 +48,9 @@ function formatDay(dateStr) {
   return d.toLocaleDateString('de-AT', { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
-function isToday(dateStr) {
-  return dateStr === toISODate(new Date());
-}
-
-function isPast(dateStr) {
-  return dateStr < toISODate(new Date());
-}
-
-function isEditor() {
-  return EDITORS.includes(currentUser);
-}
+function isToday(dateStr) { return dateStr === toISODate(new Date()); }
+function isPast(dateStr)  { return dateStr < toISODate(new Date()); }
+function isEditor()       { return EDITORS.includes(currentUser); }
 
 function escapeHtml(str) {
   if (!str) return '';
@@ -65,33 +58,46 @@ function escapeHtml(str) {
 }
 
 // ── DOM refs ─────────────────────────────────────────────────────────────────
-const calendarEl  = document.getElementById('calendar');
-const userBadge   = document.getElementById('user-badge');
-const userModal   = document.getElementById('user-modal');
-const userNameEl  = document.getElementById('user-name-input');
-const userSaveBtn = document.getElementById('user-save-btn');
-const mealModal   = document.getElementById('meal-modal');
-const modalTitle  = document.getElementById('modal-title');
-const dishInput   = document.getElementById('dish-input');
-const notesInput  = document.getElementById('notes-input');
-const saveBtn     = document.getElementById('modal-save-btn');
-const deleteBtn   = document.getElementById('modal-delete-btn');
-const cancelBtn   = document.getElementById('modal-cancel-btn');
-const statusBtns  = document.querySelectorAll('.status-btn');
-const attendBtns  = document.querySelectorAll('.attend-btn');
-const guestInput  = document.getElementById('guest-count');
-const starEls     = document.querySelectorAll('#star-input .star');
+const calendarEl     = document.getElementById('calendar');
+const userBadge      = document.getElementById('user-badge');
+const userModal      = document.getElementById('user-modal');
+const userNameEl     = document.getElementById('user-name-input');
+const userSaveBtn    = document.getElementById('user-save-btn');
+const mealModal      = document.getElementById('meal-modal');
+const modalTitle     = document.getElementById('modal-title');
+const dishDisplay    = document.getElementById('meal-dish-display');
+const editFields     = document.getElementById('edit-fields');
+const dishInput      = document.getElementById('dish-input');
+const notesInput     = document.getElementById('notes-input');
+const saveBtn        = document.getElementById('modal-save-btn');
+const deleteBtn      = document.getElementById('modal-delete-btn');
+const cancelBtn      = document.getElementById('modal-cancel-btn');
+const statusBtns     = document.querySelectorAll('.status-btn');
+const attendBtns     = document.querySelectorAll('.attend-btn');
+const guestInput     = document.getElementById('guest-count');
+const starEls        = document.querySelectorAll('#star-input .star');
+
+let editingKey     = null;
+let selectedStatus = 'scratch';
 let selectedRating = null;
 
-let editingKey = null; // "YYYY-MM-DD-lunch" or "YYYY-MM-DD-dinner"
+// ── Status buttons ────────────────────────────────────────────────────────────
+statusBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    selectedStatus = btn.dataset.status;
+    statusBtns.forEach(b => b.classList.toggle('active', b.dataset.status === selectedStatus));
+  });
+});
 
+// ── Attend buttons ────────────────────────────────────────────────────────────
 attendBtns.forEach(btn => {
   btn.addEventListener('click', () => btn.classList.toggle('active'));
 });
 
+// ── Star rating ───────────────────────────────────────────────────────────────
 function setStars(val) {
-  selectedRating = val;
-  starEls.forEach(s => s.classList.toggle('on', Number(s.dataset.v) <= val));
+  selectedRating = val || null;
+  starEls.forEach(s => s.classList.toggle('on', Number(s.dataset.v) <= (val || 0)));
 }
 
 starEls.forEach(s => {
@@ -121,36 +127,41 @@ document.querySelectorAll('.modal-name-btn').forEach(btn => {
 });
 
 // ── Meal modal ────────────────────────────────────────────────────────────────
-let selectedStatus = 'scratch';
-
-statusBtns.forEach(btn => {
-  btn.addEventListener('click', () => {
-    selectedStatus = btn.dataset.status;
-    statusBtns.forEach(b => b.classList.toggle('active', b.dataset.status === selectedStatus));
-  });
-});
-
 function openMealModal(dateStr, mealType, existingMeal = null) {
-  if (!isEditor()) return;
+  if (!currentUser) { showUserModal(); return; }
+
   editingKey = `${dateStr}-${mealType}`;
-  const dayLabel = formatDay(dateStr);
+  const dayLabel  = formatDay(dateStr);
   const typeLabel = mealType === 'lunch' ? 'Lunch' : 'Dinner';
   modalTitle.textContent = `${typeLabel} · ${dayLabel}`;
 
-  dishInput.value  = existingMeal?.dish  || '';
-  notesInput.value = existingMeal?.notes || '';
-  selectedStatus   = existingMeal?.cook_status || 'scratch';
-  statusBtns.forEach(b => b.classList.toggle('active', b.dataset.status === selectedStatus));
+  const editor = isEditor();
 
-  const existing_attendees = existingMeal?.attendees || [];
-  attendBtns.forEach(b => b.classList.toggle('active', existing_attendees.includes(b.dataset.name)));
-  guestInput.value = existingMeal?.guest_count || 0;
-  setStars(existingMeal?.rating || 0);
+  // Edit fields: editors only
+  editFields.classList.toggle('hidden', !editor);
+  dishDisplay.classList.toggle('hidden', editor || !existingMeal);
 
-  deleteBtn.classList.toggle('hidden', !existingMeal);
+  if (editor) {
+    dishInput.value  = existingMeal?.dish  || '';
+    notesInput.value = existingMeal?.notes || '';
+    selectedStatus   = existingMeal?.cook_status || 'scratch';
+    statusBtns.forEach(b => b.classList.toggle('active', b.dataset.status === selectedStatus));
+    const existing_attendees = existingMeal?.attendees || [];
+    attendBtns.forEach(b => b.classList.toggle('active', existing_attendees.includes(b.dataset.name)));
+    guestInput.value = existingMeal?.guest_count || 0;
+  } else {
+    dishDisplay.textContent = existingMeal?.dish || '';
+  }
+
+  // Rating: current user's own rating
+  const mealRatings = existingMeal ? ratings.get(existingMeal.id) : null;
+  setStars(mealRatings?.get(currentUser) || 0);
+
+  deleteBtn.classList.toggle('hidden', !editor || !existingMeal);
+  saveBtn.textContent = editor ? 'Save' : 'Rate';
 
   mealModal.classList.remove('hidden');
-  dishInput.focus();
+  if (editor) dishInput.focus();
 }
 
 function closeMealModal() {
@@ -162,32 +173,52 @@ cancelBtn.addEventListener('click', closeMealModal);
 mealModal.addEventListener('click', e => { if (e.target === mealModal) closeMealModal(); });
 
 saveBtn.addEventListener('click', async () => {
-  const dish = dishInput.value.trim();
-  if (!dish) return;
-  const [dateStr, mealType] = editingKey.split(/-(?=lunch|dinner)/);
   const existing = meals.get(editingKey);
-  const attendees = [...attendBtns].filter(b => b.classList.contains('active')).map(b => b.dataset.name);
-  const guest_count = parseInt(guestInput.value) || 0;
-  const rating = selectedRating || null;
+  const editor   = isEditor();
 
-  if (existing) {
-    await db.from('meal_plan').update({
-      dish, notes: notesInput.value.trim() || null,
-      cook_status: selectedStatus,
-      attendees, guest_count, rating,
-      updated_at: new Date().toISOString(),
-    }).eq('id', existing.id);
+  if (editor) {
+    const dish = dishInput.value.trim();
+    if (!dish) return;
+    const [dateStr, mealType] = editingKey.split(/-(?=lunch|dinner)/);
+    const attendees   = [...attendBtns].filter(b => b.classList.contains('active')).map(b => b.dataset.name);
+    const guest_count = parseInt(guestInput.value) || 0;
+
+    let mealId;
+    if (existing) {
+      await db.from('meal_plan').update({
+        dish, notes: notesInput.value.trim() || null,
+        cook_status: selectedStatus,
+        attendees, guest_count,
+        updated_at: new Date().toISOString(),
+      }).eq('id', existing.id);
+      mealId = existing.id;
+    } else {
+      const { data: inserted } = await db.from('meal_plan').insert({
+        date: dateStr, meal_type: mealType,
+        dish, notes: notesInput.value.trim() || null,
+        cook_status: selectedStatus,
+        attendees, guest_count,
+        added_by: currentUser,
+      }).select('id').single();
+      mealId = inserted?.id;
+    }
+
+    if (mealId) await saveRating(mealId);
   } else {
-    await db.from('meal_plan').insert({
-      date: dateStr, meal_type: mealType,
-      dish, notes: notesInput.value.trim() || null,
-      cook_status: selectedStatus,
-      attendees, guest_count, rating,
-      added_by: currentUser,
-    });
+    // Non-editor: rating only
+    if (existing) await saveRating(existing.id);
   }
+
   closeMealModal();
 });
+
+async function saveRating(mealId) {
+  if (selectedRating) {
+    await db.from('meal_ratings').upsert({ meal_id: mealId, person_name: currentUser, rating: selectedRating });
+  } else {
+    await db.from('meal_ratings').delete().eq('meal_id', mealId).eq('person_name', currentUser);
+  }
+}
 
 dishInput.addEventListener('keydown', e => e.key === 'Enter' && saveBtn.click());
 
@@ -202,8 +233,8 @@ deleteBtn.addEventListener('click', async () => {
 // ── Render calendar ───────────────────────────────────────────────────────────
 function renderCalendar() {
   calendarEl.innerHTML = '';
-  const today    = new Date();
-  const monday   = mondayOf(today);
+  const today  = new Date();
+  const monday = mondayOf(today);
 
   for (let w = 0; w < 2; w++) {
     const weekStart = addDays(monday, w * 7);
@@ -231,23 +262,32 @@ function renderCalendar() {
       ['lunch', 'dinner'].forEach(mealType => {
         const key  = `${dateStr}-${mealType}`;
         const meal = meals.get(key);
+
+        // Filled meals: anyone with a name can click (to rate)
+        // Empty future meals: editors only
+        const clickable = (meal && currentUser) || (!meal && isEditor() && !past);
         const slot = document.createElement('div');
-        slot.className = 'meal-slot' + (meal ? ' filled' : ' empty') + (isEditor() && !past ? ' editable' : '');
-        slot.dataset.date = dateStr;
-        slot.dataset.type = mealType;
+        slot.className = 'meal-slot' + (meal ? ' filled' : ' empty') + (clickable ? ' editable' : '');
 
         if (meal) {
           const cs = COOK_STATUS[meal.cook_status] || COOK_STATUS.scratch;
           const attendSummary = (() => {
-            const names = meal.attendees?.length ? meal.attendees.map(n => n.slice(0,2)).join(' ') : '';
+            const names  = meal.attendees?.length ? meal.attendees.map(n => n.slice(0,2)).join(' ') : '';
             const guests = meal.guest_count > 0 ? `+${meal.guest_count}` : '';
             return (names || guests) ? `${names}${names && guests ? ' ' : ''}${guests}` : '';
           })();
-          const stars = meal.rating ? '★'.repeat(meal.rating) : '';
+          const mealRatings = ratings.get(meal.id);
+          const ratingsSummary = mealRatings?.size
+            ? [...mealRatings.entries()]
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([p, r]) => `${p.slice(0,2)}${'★'.repeat(r)}`)
+                .join(' ')
+            : '';
+
           slot.innerHTML = `
             <span class="meal-type-label">${mealType === 'lunch' ? '☀️' : '🌙'}</span>
             <span class="meal-name">${escapeHtml(meal.dish)}</span>
-            ${stars ? `<span class="meal-stars">${stars}</span>` : ''}
+            ${ratingsSummary ? `<span class="meal-stars">${escapeHtml(ratingsSummary)}</span>` : ''}
             ${meal.notes ? `<span class="meal-notes-dot" title="${escapeHtml(meal.notes)}">📝</span>` : ''}
             ${attendSummary ? `<span class="meal-attend">${escapeHtml(attendSummary)}</span>` : ''}
             <span class="meal-status">${cs.emoji}</span>
@@ -259,7 +299,7 @@ function renderCalendar() {
           `;
         }
 
-        if (isEditor() && !past) {
+        if (clickable) {
           slot.addEventListener('click', () => openMealModal(dateStr, mealType, meal || null));
         }
 
@@ -273,7 +313,6 @@ function renderCalendar() {
 
 // ── Load ──────────────────────────────────────────────────────────────────────
 async function loadMeals() {
-  const today   = toISODate(new Date());
   const monday  = toISODate(mondayOf(new Date()));
   const endDate = toISODate(addDays(mondayOf(new Date()), 13));
 
@@ -288,14 +327,25 @@ async function loadMeals() {
   if (error) { console.error(error); return; }
   meals.clear();
   data.forEach(m => meals.set(`${m.date}-${m.meal_type}`, m));
+
+  // Load ratings for visible meals
+  ratings.clear();
+  const mealIds = data.map(m => m.id);
+  if (mealIds.length) {
+    const { data: rData } = await db.from('meal_ratings').select('*').in('meal_id', mealIds);
+    (rData || []).forEach(r => {
+      if (!ratings.has(r.meal_id)) ratings.set(r.meal_id, new Map());
+      ratings.get(r.meal_id).set(r.person_name, r.rating);
+    });
+  }
+
   renderCalendar();
 }
 
 // ── Real-time ─────────────────────────────────────────────────────────────────
-db.channel('meal_plan')
-  .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_plan' }, () => {
-    loadMeals();
-  })
+db.channel('meal_plan_changes')
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_plan' }, () => loadMeals())
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_ratings' }, () => loadMeals())
   .subscribe();
 
 // ── Init ──────────────────────────────────────────────────────────────────────
