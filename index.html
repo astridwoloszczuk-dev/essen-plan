@@ -169,6 +169,51 @@
       font-size: 1rem; font-weight: 600; cursor: pointer;
     }
 
+    /* ── Use banner ── */
+    .use-banner {
+      background: var(--orange); color: white;
+      padding: 10px 16px; display: flex; align-items: center; gap: 10px;
+      font-size: .88rem;
+    }
+    .use-banner.hidden { display: none; }
+    .use-banner strong { flex: 1; }
+    #use-cancel-btn {
+      background: rgba(255,255,255,.25); border: none; color: white;
+      border-radius: 999px; padding: 4px 12px; font-size: .82rem; cursor: pointer;
+    }
+
+    /* ── Wishlist ── */
+    #wishlist { padding: 12px 16px 32px; }
+    #wishlist.hidden { display: none; }
+    .wish-add-form { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+    .wish-add-form input {
+      width: 100%; border: 1.5px solid var(--gray-200); border-radius: 10px;
+      padding: 10px 14px; font-size: 1rem; outline: none; font-family: inherit;
+    }
+    .wish-add-form input:focus { border-color: var(--orange); }
+    #wish-add-btn {
+      background: var(--orange); color: white; border: none;
+      border-radius: 10px; padding: 10px; font-size: .95rem;
+      font-weight: 600; cursor: pointer;
+    }
+    .wish-card {
+      background: white; border-radius: 12px; padding: 12px 14px;
+      margin-bottom: 8px;
+    }
+    .wish-dish { font-size: .95rem; font-weight: 600; color: var(--gray-900); }
+    .wish-notes { font-size: .82rem; color: var(--gray-400); margin-top: 2px; }
+    .wish-footer { display: flex; align-items: center; margin-top: 8px; gap: 8px; }
+    .wish-by { font-size: .78rem; color: var(--gray-400); flex: 1; }
+    .wish-use-btn {
+      background: var(--orange-lt); color: var(--orange); border: 1.5px solid var(--orange);
+      border-radius: 8px; padding: 4px 10px; font-size: .8rem; font-weight: 600; cursor: pointer;
+    }
+    .wish-del-btn {
+      background: #fee2e2; color: #dc2626; border: none;
+      border-radius: 8px; padding: 4px 10px; font-size: .8rem; font-weight: 600; cursor: pointer;
+    }
+    .wish-empty { color: var(--gray-400); font-size: .88rem; text-align: center; padding: 24px 0; }
+
     /* Dish display for non-editors */
     .meal-dish-display { font-size: 1.1rem; font-weight: 600; color: var(--gray-900); margin-bottom: 14px; }
     .meal-dish-display.hidden { display: none; }
@@ -210,12 +255,27 @@
   </header>
 
   <div class="tab-bar">
-    <button class="tab-btn" data-week="-1">Last Week</button>
-    <button class="tab-btn active" data-week="0">This Week</button>
-    <button class="tab-btn" data-week="1">Next Week</button>
+    <button class="tab-btn" data-tab="-1">Last Week</button>
+    <button class="tab-btn active" data-tab="0">This Week</button>
+    <button class="tab-btn" data-tab="1">Next Week</button>
+    <button class="tab-btn" data-tab="wishlist">Wishlist</button>
+  </div>
+
+  <div id="use-banner" class="use-banner hidden">
+    Tap an empty slot to place <strong id="use-dish-name"></strong>
+    <button id="use-cancel-btn">Cancel</button>
   </div>
 
   <div id="calendar"></div>
+
+  <div id="wishlist" class="hidden">
+    <div class="wish-add-form">
+      <input id="wish-input" type="text" placeholder="Suggest a dish…" autocomplete="off" />
+      <input id="wish-notes-input" type="text" placeholder="Notes (optional)" autocomplete="off" />
+      <button id="wish-add-btn">Add</button>
+    </div>
+    <div id="wish-list"></div>
+  </div>
 
   <!-- Meal modal -->
   <div id="meal-modal" class="modal-backdrop hidden">
