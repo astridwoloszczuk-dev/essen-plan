@@ -22,10 +22,10 @@ let meals = new Map(); // "YYYY-MM-DD-lunch/dinner" → meal object
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function mondayOf(date) {
   const d = new Date(date);
-  const day = d.getDay();
-  const diff = (day === 0 ? -6 : 1 - day);
-  d.setDate(d.getDate() + diff);
   d.setHours(0, 0, 0, 0);
+  const day = d.getDay(); // 0=Sun, 1=Mon ... 6=Sat
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
   return d;
 }
 
@@ -36,7 +36,10 @@ function addDays(date, n) {
 }
 
 function toISODate(date) {
-  return date.toISOString().split('T')[0];
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 function formatDay(dateStr) {
