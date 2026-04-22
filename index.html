@@ -160,6 +160,15 @@
       font-size: 1rem; font-weight: 600; cursor: pointer;
     }
 
+    /* Stars */
+    .rating-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .rating-label { font-size: .75rem; font-weight: 700; color: var(--gray-400); text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
+    .stars { display: flex; gap: 4px; }
+    .star { font-size: 1.5rem; color: var(--gray-200); cursor: pointer; transition: color .1s; line-height: 1; }
+    .star.on { color: #f59e0b; }
+    .meal-stars { font-size: .8rem; letter-spacing: -1px; }
+    .meal-notes-dot { font-size: .7rem; color: var(--gray-400); }
+
     /* Attendance */
     .attend-section { margin-bottom: 10px; }
     .attend-label { font-size: .75rem; font-weight: 700; color: var(--gray-400); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
@@ -208,6 +217,16 @@
       </div>
       <input id="dish-input" type="text" placeholder="Dish name…" autocomplete="off" />
       <textarea id="notes-input" placeholder="Notes (optional)…"></textarea>
+      <div class="rating-row">
+        <span class="rating-label">Rating</span>
+        <div class="stars" id="star-input">
+          <span class="star" data-v="1">★</span>
+          <span class="star" data-v="2">★</span>
+          <span class="star" data-v="3">★</span>
+          <span class="star" data-v="4">★</span>
+          <span class="star" data-v="5">★</span>
+        </div>
+      </div>
       <div class="attend-section">
         <div class="attend-label">Who's joining?</div>
         <div class="attend-names">

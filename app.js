@@ -80,11 +80,25 @@ const cancelBtn   = document.getElementById('modal-cancel-btn');
 const statusBtns  = document.querySelectorAll('.status-btn');
 const attendBtns  = document.querySelectorAll('.attend-btn');
 const guestInput  = document.getElementById('guest-count');
+const starEls     = document.querySelectorAll('#star-input .star');
+let selectedRating = null;
 
 let editingKey = null; // "YYYY-MM-DD-lunch" or "YYYY-MM-DD-dinner"
 
 attendBtns.forEach(btn => {
   btn.addEventListener('click', () => btn.classList.toggle('active'));
+});
+
+function setStars(val) {
+  selectedRating = val;
+  starEls.forEach(s => s.classList.toggle('on', Number(s.dataset.v) <= val));
+}
+
+starEls.forEach(s => {
+  s.addEventListener('click', () => {
+    const v = Number(s.dataset.v);
+    setStars(selectedRating === v ? 0 : v);
+  });
 });
 
 // ── User setup ────────────────────────────────────────────────────────────────
@@ -131,6 +145,7 @@ function openMealModal(dateStr, mealType, existingMeal = null) {
   const existing_attendees = existingMeal?.attendees || [];
   attendBtns.forEach(b => b.classList.toggle('active', existing_attendees.includes(b.dataset.name)));
   guestInput.value = existingMeal?.guest_count || 0;
+  setStars(existingMeal?.rating || 0);
 
   deleteBtn.classList.toggle('hidden', !existingMeal);
 
@@ -153,12 +168,13 @@ saveBtn.addEventListener('click', async () => {
   const existing = meals.get(editingKey);
   const attendees = [...attendBtns].filter(b => b.classList.contains('active')).map(b => b.dataset.name);
   const guest_count = parseInt(guestInput.value) || 0;
+  const rating = selectedRating || null;
 
   if (existing) {
     await db.from('meal_plan').update({
       dish, notes: notesInput.value.trim() || null,
       cook_status: selectedStatus,
-      attendees, guest_count,
+      attendees, guest_count, rating,
       updated_at: new Date().toISOString(),
     }).eq('id', existing.id);
   } else {
@@ -166,7 +182,7 @@ saveBtn.addEventListener('click', async () => {
       date: dateStr, meal_type: mealType,
       dish, notes: notesInput.value.trim() || null,
       cook_status: selectedStatus,
-      attendees, guest_count,
+      attendees, guest_count, rating,
       added_by: currentUser,
     });
   }
@@ -227,9 +243,12 @@ function renderCalendar() {
             const guests = meal.guest_count > 0 ? `+${meal.guest_count}` : '';
             return (names || guests) ? `${names}${names && guests ? ' ' : ''}${guests}` : '';
           })();
+          const stars = meal.rating ? '★'.repeat(meal.rating) : '';
           slot.innerHTML = `
             <span class="meal-type-label">${mealType === 'lunch' ? '☀️' : '🌙'}</span>
             <span class="meal-name">${escapeHtml(meal.dish)}</span>
+            ${stars ? `<span class="meal-stars">${stars}</span>` : ''}
+            ${meal.notes ? `<span class="meal-notes-dot" title="${escapeHtml(meal.notes)}">📝</span>` : ''}
             ${attendSummary ? `<span class="meal-attend">${escapeHtml(attendSummary)}</span>` : ''}
             <span class="meal-status">${cs.emoji}</span>
           `;
