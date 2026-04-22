@@ -78,8 +78,14 @@ const saveBtn     = document.getElementById('modal-save-btn');
 const deleteBtn   = document.getElementById('modal-delete-btn');
 const cancelBtn   = document.getElementById('modal-cancel-btn');
 const statusBtns  = document.querySelectorAll('.status-btn');
+const attendBtns  = document.querySelectorAll('.attend-btn');
+const guestInput  = document.getElementById('guest-count');
 
 let editingKey = null; // "YYYY-MM-DD-lunch" or "YYYY-MM-DD-dinner"
+
+attendBtns.forEach(btn => {
+  btn.addEventListener('click', () => btn.classList.toggle('active'));
+});
 
 // ── User setup ────────────────────────────────────────────────────────────────
 function showUserModal() { userModal.classList.remove('hidden'); userNameEl.focus(); }
@@ -121,6 +127,11 @@ function openMealModal(dateStr, mealType, existingMeal = null) {
   notesInput.value = existingMeal?.notes || '';
   selectedStatus   = existingMeal?.cook_status || 'scratch';
   statusBtns.forEach(b => b.classList.toggle('active', b.dataset.status === selectedStatus));
+
+  const existing_attendees = existingMeal?.attendees || [];
+  attendBtns.forEach(b => b.classList.toggle('active', existing_attendees.includes(b.dataset.name)));
+  guestInput.value = existingMeal?.guest_count || 0;
+
   deleteBtn.classList.toggle('hidden', !existingMeal);
 
   mealModal.classList.remove('hidden');
@@ -140,11 +151,14 @@ saveBtn.addEventListener('click', async () => {
   if (!dish) return;
   const [dateStr, mealType] = editingKey.split(/-(?=lunch|dinner)/);
   const existing = meals.get(editingKey);
+  const attendees = [...attendBtns].filter(b => b.classList.contains('active')).map(b => b.dataset.name);
+  const guest_count = parseInt(guestInput.value) || 0;
 
   if (existing) {
     await db.from('meal_plan').update({
       dish, notes: notesInput.value.trim() || null,
       cook_status: selectedStatus,
+      attendees, guest_count,
       updated_at: new Date().toISOString(),
     }).eq('id', existing.id);
   } else {
@@ -152,6 +166,7 @@ saveBtn.addEventListener('click', async () => {
       date: dateStr, meal_type: mealType,
       dish, notes: notesInput.value.trim() || null,
       cook_status: selectedStatus,
+      attendees, guest_count,
       added_by: currentUser,
     });
   }
@@ -207,9 +222,15 @@ function renderCalendar() {
 
         if (meal) {
           const cs = COOK_STATUS[meal.cook_status] || COOK_STATUS.scratch;
+          const attendSummary = (() => {
+            const names = meal.attendees?.length ? meal.attendees.map(n => n.slice(0,2)).join(' ') : '';
+            const guests = meal.guest_count > 0 ? `+${meal.guest_count}` : '';
+            return (names || guests) ? `${names}${names && guests ? ' ' : ''}${guests}` : '';
+          })();
           slot.innerHTML = `
             <span class="meal-type-label">${mealType === 'lunch' ? '☀️' : '🌙'}</span>
             <span class="meal-name">${escapeHtml(meal.dish)}</span>
+            ${attendSummary ? `<span class="meal-attend">${escapeHtml(attendSummary)}</span>` : ''}
             <span class="meal-status">${cs.emoji}</span>
           `;
         } else {

@@ -159,6 +159,24 @@
       border: none; border-radius: 10px; padding: 12px;
       font-size: 1rem; font-weight: 600; cursor: pointer;
     }
+
+    /* Attendance */
+    .attend-section { margin-bottom: 10px; }
+    .attend-label { font-size: .75rem; font-weight: 700; color: var(--gray-400); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
+    .attend-names { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+    .attend-btn {
+      padding: 6px 12px; border-radius: 999px;
+      border: 1.5px solid var(--gray-200); background: white;
+      font-size: .82rem; font-weight: 500; cursor: pointer; color: var(--gray-600);
+      transition: border-color .15s, background .15s;
+    }
+    .attend-btn.active { border-color: var(--orange); background: var(--orange-lt); color: var(--orange); }
+    .guests-row { display: flex; align-items: center; gap: 10px; }
+    .guests-row label { font-size: .85rem; color: var(--gray-600); white-space: nowrap; }
+    .guests-row input { width: 64px; margin-bottom: 0; text-align: center; }
+
+    /* Attendance summary on meal slot */
+    .meal-attend { font-size: .72rem; color: var(--gray-400); flex: none; }
   </style>
 </head>
 <body>
@@ -190,6 +208,20 @@
       </div>
       <input id="dish-input" type="text" placeholder="Dish name…" autocomplete="off" />
       <textarea id="notes-input" placeholder="Notes (optional)…"></textarea>
+      <div class="attend-section">
+        <div class="attend-label">Who's joining?</div>
+        <div class="attend-names">
+          <button class="attend-btn" data-name="Astrid">Astrid</button>
+          <button class="attend-btn" data-name="Niko">Niko</button>
+          <button class="attend-btn" data-name="Max">Max</button>
+          <button class="attend-btn" data-name="Alex">Alex</button>
+          <button class="attend-btn" data-name="Vicky">Vicky</button>
+        </div>
+        <div class="guests-row">
+          <label for="guest-count">+ Guests</label>
+          <input type="number" id="guest-count" min="0" max="20" value="0" />
+        </div>
+      </div>
       <div class="modal-actions">
         <button class="btn-cancel" id="modal-cancel-btn">Cancel</button>
         <button class="btn-delete hidden" id="modal-delete-btn">Delete</button>
