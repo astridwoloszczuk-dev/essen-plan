@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#ea580c" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>Essen Plan</title>
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="icon" href="./icon-192.svg" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --orange:    #ea580c;
+      --orange-lt: #fff7ed;
+      --gray-50:   #f9fafb;
+      --gray-100:  #f3f4f6;
+      --gray-200:  #e5e7eb;
+      --gray-400:  #9ca3af;
+      --gray-600:  #4b5563;
+      --gray-900:  #111827;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--gray-50);
+      color: var(--gray-900);
+      min-height: 100dvh;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--orange);
+      color: white;
+      padding: 0 16px;
+      height: 56px;
+      display: flex; align-items: center; justify-content: space-between;
+      position: sticky; top: 0; z-index: 10;
+      box-shadow: 0 1px 3px rgba(0,0,0,.15);
+    }
+    .app-title { font-size: 1.05rem; font-weight: 700; }
+    #user-badge {
+      font-size: .8rem; background: rgba(255,255,255,.2);
+      border: none; color: white; padding: 4px 10px; border-radius: 999px;
+      cursor: pointer; max-width: 110px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    #user-badge:hover { background: rgba(255,255,255,.3); }
+
+    /* ── Calendar ── */
+    #calendar { padding: 12px 16px 32px; display: flex; flex-direction: column; gap: 4px; }
+
+    .week-header {
+      font-size: .72rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .06em; color: var(--gray-400);
+      padding: 12px 0 4px;
+    }
+
+    .day {
+      background: white; border-radius: 12px;
+      overflow: hidden; margin-bottom: 4px;
+    }
+    .day.today { box-shadow: 0 0 0 2px var(--orange); }
+    .day.past  { opacity: .6; }
+
+    .day-label {
+      padding: 8px 14px 4px;
+      font-size: .8rem; font-weight: 700; color: var(--gray-600);
+      border-bottom: 1px solid var(--gray-100);
+    }
+    .day.today .day-label { color: var(--orange); }
+
+    .meal-slot {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--gray-100);
+      min-height: 44px;
+    }
+    .meal-slot:last-child { border-bottom: none; }
+    .meal-slot.editable { cursor: pointer; }
+    .meal-slot.editable:hover { background: var(--orange-lt); }
+
+    .meal-type-label { font-size: .9rem; min-width: 20px; }
+    .meal-name { flex: 1; font-size: .9rem; font-weight: 500; }
+    .meal-status { font-size: .9rem; }
+    .meal-empty { flex: 1; font-size: .85rem; color: var(--gray-400); }
+
+    /* ── Modals ── */
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(0,0,0,.4);
+      display: flex; align-items: flex-end; justify-content: center;
+      z-index: 100; padding: 0;
+    }
+    .modal-backdrop.hidden { display: none; }
+
+    .modal {
+      background: white; border-radius: 20px 20px 0 0;
+      padding: 24px 20px 32px; width: 100%; max-width: 480px;
+      box-shadow: 0 -4px 30px rgba(0,0,0,.15);
+    }
+    .modal h2 { font-size: 1rem; font-weight: 700; margin-bottom: 16px; color: var(--gray-900); }
+
+    /* Status buttons */
+    .status-row { display: flex; gap: 6px; margin-bottom: 14px; }
+    .status-btn {
+      flex: 1; padding: 8px 4px; border-radius: 10px;
+      border: 1.5px solid var(--gray-200); background: white;
+      font-size: .72rem; font-weight: 600; cursor: pointer;
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      transition: border-color .15s, background .15s;
+      color: var(--gray-600);
+    }
+    .status-btn .status-emoji { font-size: 1.2rem; }
+    .status-btn.active { border-color: var(--orange); background: var(--orange-lt); color: var(--orange); }
+
+    .modal input, .modal textarea {
+      width: 100%; border: 1.5px solid var(--gray-200); border-radius: 10px;
+      padding: 10px 14px; font-size: 1rem; outline: none;
+      font-family: inherit; resize: none;
+      margin-bottom: 10px;
+    }
+    .modal input:focus, .modal textarea:focus { border-color: var(--orange); }
+    .modal textarea { height: 70px; }
+
+    .modal-actions { display: flex; gap: 8px; margin-top: 4px; }
+    .btn-save {
+      flex: 1; background: var(--orange); color: white;
+      border: none; border-radius: 10px; padding: 12px;
+      font-size: 1rem; font-weight: 600; cursor: pointer;
+    }
+    .btn-save:hover { background: #c2410c; }
+    .btn-delete {
+      background: #fee2e2; color: #dc2626;
+      border: none; border-radius: 10px; padding: 12px 16px;
+      font-size: .9rem; font-weight: 600; cursor: pointer;
+    }
+    .btn-cancel {
+      background: var(--gray-100); color: var(--gray-600);
+      border: none; border-radius: 10px; padding: 12px 16px;
+      font-size: .9rem; font-weight: 600; cursor: pointer;
+    }
+
+    /* User modal */
+    .user-modal .modal { border-radius: 16px; padding: 28px 24px; }
+    .user-modal { align-items: center; }
+    .modal-names { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+    .modal-name-btn {
+      flex: 1; min-width: 80px; border: 1.5px solid var(--gray-200);
+      border-radius: 10px; padding: 8px; font-size: .9rem; font-weight: 500;
+      background: white; cursor: pointer;
+    }
+    .modal-name-btn:hover { border-color: var(--orange); background: var(--orange-lt); color: var(--orange); }
+    .modal-divider { text-align: center; font-size: .8rem; color: var(--gray-400); margin-bottom: 12px; }
+    .modal p { font-size: .85rem; color: var(--gray-600); margin-bottom: 16px; }
+    .btn-save-user {
+      width: 100%; background: var(--orange); color: white;
+      border: none; border-radius: 10px; padding: 12px;
+      font-size: 1rem; font-weight: 600; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="app-title">🍽️ Essen Plan</div>
+    <button id="user-badge">Set name</button>
+  </header>
+
+  <div id="calendar"></div>
+
+  <!-- Meal modal -->
+  <div id="meal-modal" class="modal-backdrop hidden">
+    <div class="modal">
+      <h2 id="modal-title"></h2>
+      <div class="status-row">
+        <button class="status-btn active" data-status="scratch">
+          <span class="status-emoji">👩‍🍳</span><span>Cooking</span>
+        </button>
+        <button class="status-btn" data-status="defrost">
+          <span class="status-emoji">❄️</span><span>Defrost</span>
+        </button>
+        <button class="status-btn" data-status="soulkitchen">
+          <span class="status-emoji">🥡</span><span>Soulkitchen</span>
+        </button>
+        <button class="status-btn" data-status="eating_out">
+          <span class="status-emoji">🍴</span><span>Eating out</span>
+        </button>
+      </div>
+      <input id="dish-input" type="text" placeholder="Dish name…" autocomplete="off" />
+      <textarea id="notes-input" placeholder="Notes (optional)…"></textarea>
+      <div class="modal-actions">
+        <button class="btn-cancel" id="modal-cancel-btn">Cancel</button>
+        <button class="btn-delete hidden" id="modal-delete-btn">Delete</button>
+        <button class="btn-save" id="modal-save-btn">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- User modal -->
+  <div id="user-modal" class="modal-backdrop user-modal hidden">
+    <div class="modal">
+      <h2>Who are you? 👋</h2>
+      <p>Tap your name — Astrid and Niko can add and edit meals.</p>
+      <div class="modal-names">
+        <button class="modal-name-btn">Astrid</button>
+        <button class="modal-name-btn">Niko</button>
+        <button class="modal-name-btn">Max</button>
+        <button class="modal-name-btn">Alex</button>
+        <button class="modal-name-btn">Vicky</button>
+      </div>
+      <div class="modal-divider">or type a name</div>
+      <input id="user-name-input" type="text" placeholder="Your name" maxlength="30" />
+      <button class="btn-save-user" id="user-save-btn">Save</button>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
