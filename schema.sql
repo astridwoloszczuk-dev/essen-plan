@@ -3,7 +3,7 @@
 CREATE TABLE meal_plan (
   id          uuid default gen_random_uuid() primary key,
   date        date not null,
-  meal_type   text not null check (meal_type in ('lunch', 'dinner')),
+  meal_type   text not null check (meal_type in ('breakfast', 'lunch', 'dinner')),
   dish        text not null,
   cook_status text not null check (cook_status in ('scratch', 'defrost', 'soulkitchen', 'eating_out')),
   added_by    text,
