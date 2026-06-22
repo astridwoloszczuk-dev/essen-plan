@@ -182,7 +182,7 @@ function openMealModal(dateStr, mealType, existingMeal = null, prefillDish = nul
 
   editingKey = `${dateStr}-${mealType}`;
   const dayLabel  = formatDay(dateStr);
-  const typeLabel = mealType === 'lunch' ? 'Lunch' : 'Dinner';
+  const typeLabel = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner' }[mealType] || mealType;
   modalTitle.textContent = `${typeLabel} · ${dayLabel}`;
 
   const editor = isEditor();
@@ -227,7 +227,7 @@ saveBtn.addEventListener('click', async () => {
   if (editor) {
     const dish = dishInput.value.trim();
     if (!dish) return;
-    const [dateStr, mealType] = editingKey.split(/-(?=lunch|dinner)/);
+    const [dateStr, mealType] = editingKey.split(/-(?=breakfast|lunch|dinner)/);
     const attendees   = [...attendBtns].filter(b => b.classList.contains('active')).map(b => b.dataset.name);
     const guest_count = parseInt(guestInput.value) || 0;
 
@@ -365,7 +365,7 @@ function renderCalendar() {
     dayLabel.textContent = formatDay(dateStr);
     dayEl.appendChild(dayLabel);
 
-    ['lunch', 'dinner'].forEach(mealType => {
+    ['breakfast', 'lunch', 'dinner'].forEach(mealType => {
       const key  = `${dateStr}-${mealType}`;
       const meal = meals.get(key);
 
@@ -392,7 +392,7 @@ function renderCalendar() {
           : '';
 
         slot.innerHTML = `
-          <span class="meal-type-label">${mealType === 'lunch' ? '☀️' : '🌙'}</span>
+          <span class="meal-type-label">${({ breakfast: '🥐', lunch: '☀️', dinner: '🌙' })[mealType]}</span>
           <span class="meal-name">${escapeHtml(meal.dish)}</span>
           ${ratingsSummary ? `<span class="meal-stars">${escapeHtml(ratingsSummary)}</span>` : ''}
           ${meal.notes ? `<span class="meal-notes-dot" title="${escapeHtml(meal.notes)}">📝</span>` : ''}
@@ -401,7 +401,7 @@ function renderCalendar() {
         `;
       } else {
         slot.innerHTML = `
-          <span class="meal-type-label">${mealType === 'lunch' ? '☀️' : '🌙'}</span>
+          <span class="meal-type-label">${({ breakfast: '🥐', lunch: '☀️', dinner: '🌙' })[mealType]}</span>
           <span class="meal-empty">${isEditor() && !past ? (pendingWish ? '+ Place here' : '+ Add') : '—'}</span>
         `;
       }
