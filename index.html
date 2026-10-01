@@ -246,6 +246,43 @@
 
     /* Attendance summary on meal slot */
     .meal-attend { font-size: .72rem; color: var(--gray-400); flex: none; }
+
+    /* ── Gerichte (meal-draft catalogue) ── */
+    #dishes { padding: 12px 16px 32px; }
+    #dishes.hidden { display: none; }
+    .dish-hint { font-size: .8rem; color: var(--gray-400); margin-bottom: 10px; }
+    .dish-row {
+      background: white; border-radius: 12px; padding: 10px 14px; margin-bottom: 6px;
+      display: flex; align-items: center; gap: 10px; cursor: pointer;
+    }
+    .dish-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--orange); flex: none; }
+    .dish-dot.done { background: transparent; }
+    .dish-name { flex: 1; font-size: .92rem; font-weight: 500; }
+    .dish-meta { font-size: .72rem; color: var(--gray-400); white-space: nowrap; }
+    .dish-modal-inner { max-height: 92dvh; overflow-y: auto; }
+    .field-label { font-size: .75rem; font-weight: 700; color: var(--gray-400); text-transform: uppercase;
+                   letter-spacing: .05em; margin: 10px 0 6px; }
+    .seg { display: flex; gap: 6px; }
+    .seg button {
+      flex: 1; padding: 8px 4px; border-radius: 10px; border: 1.5px solid var(--gray-200);
+      background: white; font-size: .82rem; font-weight: 600; color: var(--gray-600); cursor: pointer;
+    }
+    .seg button.active { border-color: var(--orange); background: var(--orange-lt); color: var(--orange); }
+    .field-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+    .field-row label { font-size: .85rem; color: var(--gray-600); flex: 1; }
+    .modal .field-row input { width: 80px; margin-bottom: 0; text-align: center; }
+    .ing-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+    .modal .ing-row input { flex: 1; margin-bottom: 0; padding: 8px 10px; font-size: .9rem; }
+    .ing-home, .ing-del {
+      flex: none; border: 1.5px solid var(--gray-200); background: white; border-radius: 8px;
+      padding: 6px 8px; font-size: .9rem; cursor: pointer; opacity: .45;
+    }
+    .ing-home.active { opacity: 1; border-color: var(--orange); background: var(--orange-lt); }
+    .ing-del { opacity: .7; color: #dc2626; }
+    .btn-add-ing {
+      background: none; border: 1.5px dashed var(--gray-200); border-radius: 10px; width: 100%;
+      padding: 8px; color: var(--gray-600); font-size: .85rem; cursor: pointer; margin-bottom: 12px;
+    }
   </style>
 </head>
 <body>
@@ -260,6 +297,7 @@
     <button class="tab-btn active" data-tab="0">This Week</button>
     <button class="tab-btn" data-tab="1">Next Week</button>
     <button class="tab-btn" data-tab="wishlist">Wishlist</button>
+    <button class="tab-btn" data-tab="dishes">Gerichte</button>
   </div>
 
   <div id="use-banner" class="use-banner hidden">
@@ -276,6 +314,41 @@
       <button id="wish-add-btn">Add</button>
     </div>
     <div id="wish-list"></div>
+  </div>
+
+  <!-- Gerichte: meal-draft's catalogue. The one-time red-pen sheet, and where a wrong
+       ingredient gets fixed later. Saving marks a dish as checked. -->
+  <div id="dishes" class="hidden">
+    <div class="dish-hint">Mit Punkt = noch nicht geprüft. Antippen, korrigieren, speichern.</div>
+    <div id="dish-list"></div>
+  </div>
+
+  <!-- Dish modal -->
+  <div id="dish-modal" class="modal-backdrop hidden">
+    <div class="modal dish-modal-inner">
+      <h2 id="dish-title"></h2>
+      <div class="field-label">Aufwand (aktiv)</div>
+      <div class="seg" id="dish-effort">
+        <button data-v="30">schnell ≤30</button>
+        <button data-v="60">mittel ≤60</button>
+        <button data-v="90">Projekt</button>
+      </div>
+      <div class="field-label">Vorkochen möglich?</div>
+      <div class="seg" id="dish-preps"><button data-v="true">ja</button><button data-v="false">nein</button></div>
+      <div class="field-label">Hält in der Wärmelade / kalt gut?</div>
+      <div class="seg" id="dish-holds"><button data-v="true">ja</button><button data-v="false">nein</button></div>
+      <div class="field-row">
+        <label for="dish-finish">Minuten am Abend</label>
+        <input id="dish-finish" type="number" min="0" max="180" />
+      </div>
+      <div class="field-label">Zutaten für 5 (eine pro Zeile · 🏠 = immer zu Hause)</div>
+      <div id="dish-ings"></div>
+      <button class="btn-add-ing" id="dish-add-ing">+ Zutat</button>
+      <div class="modal-actions">
+        <button class="btn-cancel" id="dish-cancel">Abbrechen</button>
+        <button class="btn-save" id="dish-save">Speichern</button>
+      </div>
+    </div>
   </div>
 
   <!-- Meal modal -->

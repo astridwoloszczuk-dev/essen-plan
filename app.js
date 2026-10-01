@@ -131,18 +131,20 @@ starEls.forEach(s => {
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 function switchTab(tabValue) {
-  currentTab = tabValue === 'wishlist' ? 'wishlist' : 'week';
+  currentTab = ['wishlist', 'dishes'].includes(tabValue) ? tabValue : 'week';
   document.querySelectorAll('.tab-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.tab === tabValue)
   );
+  calendarEl.classList.toggle('hidden', currentTab !== 'week');
+  wishlistEl.classList.toggle('hidden', currentTab !== 'wishlist');
+  dishesEl.classList.toggle('hidden', currentTab !== 'dishes');
   if (currentTab === 'wishlist') {
-    calendarEl.classList.add('hidden');
-    wishlistEl.classList.remove('hidden');
     useBanner.classList.add('hidden');
+  } else if (currentTab === 'dishes') {
+    useBanner.classList.add('hidden');
+    loadDishes();
   } else {
     currentWeek = Number(tabValue);
-    calendarEl.classList.remove('hidden');
-    wishlistEl.classList.add('hidden');
     renderCalendar();
   }
 }
@@ -342,6 +344,134 @@ wishAddBtn.addEventListener('click', async () => {
 });
 
 wishInput.addEventListener('keydown', e => e.key === 'Enter' && wishAddBtn.click());
+
+// ── Gerichte (meal-draft's dish catalogue) ────────────────────────────────────
+// One row per dish; unreviewed first with a dot. Saving sets reviewed = true. The effort
+// buttons are coarse on purpose: an unchanged button keeps the exact minutes.
+const dishesEl   = document.getElementById('dishes');
+const dishListEl = document.getElementById('dish-list');
+const dishModal  = document.getElementById('dish-modal');
+const dishIngsEl = document.getElementById('dish-ings');
+const dishFinish = document.getElementById('dish-finish');
+const EFFORT = [30, 60, 90];
+const UNITS = ['g', 'kg', 'ml', 'l', 'Stk', 'Bund', 'Glas', 'Pkg', 'Flasche', 'Zehen', 'EL', 'TL', 'Prise', 'Dose'];
+let dishes = [];
+let editingDish = null;
+
+function effortOf(min) { return min <= 30 ? 30 : min <= 60 ? 60 : 90; }
+
+async function loadDishes() {
+  const { data, error } = await db.from('dishes').select('*').order('name');
+  if (error) {
+    dishListEl.innerHTML = '<div class="wish-empty">Die Gerichte-Liste ist noch nicht eingerichtet.</div>';
+    return;
+  }
+  dishes = data || [];
+  if (currentTab === 'dishes') renderDishes();
+}
+
+function renderDishes() {
+  const sorted = [...dishes].sort((a, b) => (a.reviewed - b.reviewed) || a.name.localeCompare(b.name, 'de'));
+  dishListEl.innerHTML = '';
+  sorted.forEach(d => {
+    const row = document.createElement('div');
+    row.className = 'dish-row';
+    const tags = [
+      `${d.active_min ?? '?'}′`,
+      d.preps_well ? 'vorkochbar' : null,
+      d.holds ? 'hält' : null,
+    ].filter(Boolean).join(' · ');
+    row.innerHTML = `<span class="dish-dot${d.reviewed ? ' done' : ''}"></span>
+      <span class="dish-name">${escapeHtml(d.name)}</span>
+      <span class="dish-meta">${escapeHtml(tags)}</span>`;
+    row.addEventListener('click', () => openDish(d));
+    dishListEl.appendChild(row);
+  });
+}
+
+function fmtIng(x) {
+  const q = x.qty ? String(x.qty).replace('.', ',') + ' ' : '';
+  return `${q}${x.unit && x.qty ? x.unit + ' ' : ''}${x.item}`;
+}
+
+function parseIng(line, old) {
+  const m = line.trim().match(/^([\d]+(?:[.,]\d+)?)?\s*([A-Za-zäöü]+)?\s+(.+)$/);
+  let qty = null, unit = '', item = line.trim();
+  if (m && m[1]) {
+    qty = parseFloat(m[1].replace(',', '.'));
+    if (m[2] && UNITS.map(u => u.toLowerCase()).includes(m[2].toLowerCase())) { unit = m[2]; item = m[3]; }
+    else { unit = 'Stk'; item = ((m[2] || '') + ' ' + m[3]).trim(); }
+  }
+  // keep what the line can't show (keeps_days, base) from the same ingredient before the edit
+  const prev = (old || []).find(o => o.item.toLowerCase() === item.toLowerCase()) || {};
+  return { ...prev, item, qty: qty ?? prev.qty ?? 1, unit: unit || prev.unit || 'Stk' };
+}
+
+function ingRow(x) {
+  const row = document.createElement('div');
+  row.className = 'ing-row';
+  row.innerHTML = `<input type="text" value="${escapeHtml(x ? fmtIng(x) : '')}" placeholder="z.B. 500 g Faschiertes" />
+    <button class="ing-home${x && x.always_home ? ' active' : ''}" title="immer zu Hause">🏠</button>
+    <button class="ing-del" title="entfernen">✕</button>`;
+  row.querySelector('.ing-home').addEventListener('click', e => e.currentTarget.classList.toggle('active'));
+  row.querySelector('.ing-del').addEventListener('click', () => row.remove());
+  return row;
+}
+
+function setSeg(id, value) {
+  document.querySelectorAll(`#${id} button`).forEach(b => b.classList.toggle('active', b.dataset.v === String(value)));
+}
+function segValue(id) {
+  const b = document.querySelector(`#${id} button.active`);
+  return b ? b.dataset.v : null;
+}
+['dish-effort', 'dish-preps', 'dish-holds'].forEach(id =>
+  document.querySelectorAll(`#${id} button`).forEach(b => b.addEventListener('click', () => setSeg(id, b.dataset.v))));
+
+function openDish(d) {
+  if (!isEditor()) return;
+  editingDish = d;
+  document.getElementById('dish-title').textContent = d.name;
+  setSeg('dish-effort', effortOf(d.active_min || 0));
+  setSeg('dish-preps', !!d.preps_well);
+  setSeg('dish-holds', !!d.holds);
+  dishFinish.value = d.finish_min ?? '';
+  dishIngsEl.innerHTML = '';
+  (d.ingredients || []).forEach(x => dishIngsEl.appendChild(ingRow(x)));
+  dishModal.classList.remove('hidden');
+}
+
+document.getElementById('dish-add-ing').addEventListener('click', () => {
+  const r = ingRow(null);
+  dishIngsEl.appendChild(r);
+  r.querySelector('input').focus();
+});
+document.getElementById('dish-cancel').addEventListener('click', () => dishModal.classList.add('hidden'));
+dishModal.addEventListener('click', e => { if (e.target === dishModal) dishModal.classList.add('hidden'); });
+
+document.getElementById('dish-save').addEventListener('click', async () => {
+  const d = editingDish;
+  if (!d) return;
+  const effort = Number(segValue('dish-effort'));
+  const ingredients = [...dishIngsEl.querySelectorAll('.ing-row')]
+    .map(r => ({ line: r.querySelector('input').value, home: r.querySelector('.ing-home').classList.contains('active') }))
+    .filter(x => x.line.trim())
+    .map(x => ({ ...parseIng(x.line, d.ingredients), always_home: x.home }));
+  const patch = {
+    active_min: effort === effortOf(d.active_min || 0) ? d.active_min : effort,
+    preps_well: segValue('dish-preps') === 'true',
+    holds: segValue('dish-holds') === 'true',
+    finish_min: dishFinish.value === '' ? null : parseInt(dishFinish.value, 10),
+    ingredients,
+    reviewed: true,
+    updated_at: new Date().toISOString(),
+  };
+  const { error } = await db.from('dishes').update(patch).eq('id', d.id);
+  if (error) { alert('Speichern ging nicht: ' + error.message); return; }
+  Object.assign(d, patch);
+  dishModal.classList.add('hidden');
+  renderDishes();
+});
 
 // ── Render calendar ───────────────────────────────────────────────────────────
 function renderCalendar() {
