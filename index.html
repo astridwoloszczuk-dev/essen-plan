@@ -279,6 +279,42 @@
     }
     .ing-home.active { opacity: 1; border-color: var(--orange); background: var(--orange-lt); }
     .ing-del { opacity: .7; color: #dc2626; }
+    .hidden { display: none !important; }
+    .btn-new-dish {
+      width: 100%; background: var(--orange); color: white; border: none; border-radius: 10px;
+      padding: 10px; font-size: .95rem; font-weight: 600; cursor: pointer; margin-bottom: 10px;
+    }
+    .dish-name-input { font-size: 1.05rem !important; font-weight: 600; }
+    .dish-readnote { font-size: .8rem; background: #fef3c7; color: #78350f; border-radius: 8px; padding: 6px 10px; margin-bottom: 8px; }
+    .dish-readnote.hidden, #dish-recipe-off.hidden, #dish-recipe-box.hidden, #dish-notfor-box.hidden,
+    #dish-method-box.hidden, .recipe-url.hidden, #recipe-method-box.hidden { display: none; }
+    .photo-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+    .photo-thumb { position: relative; width: 72px; height: 72px; border-radius: 8px; overflow: hidden; background: var(--gray-100); }
+    .photo-thumb img { width: 100%; height: 100%; object-fit: cover; cursor: zoom-in; }
+    .photo-thumb button { position: absolute; top: 2px; right: 2px; border: none; border-radius: 999px;
+      background: rgba(0,0,0,.55); color: white; width: 22px; height: 22px; font-size: .75rem; cursor: pointer; }
+    .btn-add-photo { display: inline-block; border: 1.5px dashed var(--gray-200); border-radius: 10px;
+      padding: 8px 12px; font-size: .85rem; color: var(--gray-600); cursor: pointer; margin-bottom: 6px; }
+    .upload-status { font-size: .78rem; color: var(--gray-600); min-height: 1em; margin-bottom: 6px; }
+    .seg-gap { margin-top: 6px; }
+    .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+    .chips button { padding: 6px 12px; border-radius: 999px; border: 1.5px solid var(--gray-200); background: white;
+      font-size: .82rem; color: var(--gray-600); cursor: pointer; }
+    .chips button.active { border-color: #dc2626; background: #fee2e2; color: #b91c1c; text-decoration: line-through; }
+    .dish-more { margin: 12px 0 4px; }
+    .dish-more summary { font-size: .8rem; color: var(--gray-400); cursor: pointer; }
+    .dish-tag { font-size: .68rem; background: #fef3c7; color: #78350f; border-radius: 999px; padding: 1px 6px; white-space: nowrap; }
+    .meal-recipe { font-size: .9rem; cursor: pointer; padding: 0 2px; }
+    .recipe-photos { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 8px; }
+    .recipe-photos img { height: 160px; border-radius: 8px; cursor: zoom-in; }
+    .recipe-url { display: block; font-size: .85rem; color: var(--orange); margin-bottom: 8px; }
+    .recipe-ings { padding-left: 18px; font-size: .9rem; margin-bottom: 8px; }
+    .recipe-ings li.home { color: var(--gray-400); }
+    .recipe-method { white-space: pre-line; font-size: .9rem; line-height: 1.45; }
+    .photo-view { position: fixed; inset: 0; background: rgba(0,0,0,.9); z-index: 200;
+      display: flex; align-items: center; justify-content: center; }
+    .photo-view.hidden { display: none; }
+    .photo-view img { max-width: 100%; max-height: 100%; }
     .btn-add-ing {
       background: none; border: 1.5px dashed var(--gray-200); border-radius: 10px; width: 100%;
       padding: 8px; color: var(--gray-600); font-size: .85rem; cursor: pointer; margin-bottom: 12px;
@@ -316,40 +352,91 @@
     <div id="wish-list"></div>
   </div>
 
-  <!-- Gerichte: meal-draft's catalogue. The one-time red-pen sheet, and where a wrong
-       ingredient gets fixed later. Saving marks a dish as checked. -->
+  <!-- Gerichte: where a dish is defined (meal-draft addendum, 2 Oct 2026). Her recipe photos,
+       what she needs, and three ratings; saving marks a dish as checked. -->
   <div id="dishes" class="hidden">
+    <button class="btn-new-dish" id="dish-new">+ Neues Gericht</button>
     <div class="dish-hint">Mit Punkt = noch nicht geprüft. Antippen, korrigieren, speichern.</div>
     <div id="dish-list"></div>
   </div>
 
-  <!-- Dish modal -->
+  <!-- Dish editor -->
   <div id="dish-modal" class="modal-backdrop hidden">
     <div class="modal dish-modal-inner">
-      <h2 id="dish-title"></h2>
-      <div class="field-label">Aufwand (aktiv)</div>
-      <div class="seg" id="dish-effort">
-        <button data-v="30">schnell ≤30</button>
-        <button data-v="60">mittel ≤60</button>
-        <button data-v="90">Projekt</button>
+      <input id="dish-name" class="dish-name-input" type="text" placeholder="Name des Gerichts" autocomplete="off" />
+      <div id="dish-readnote" class="dish-readnote hidden"></div>
+
+      <div class="field-label">Rezept</div>
+      <div id="dish-recipe-box">
+        <div id="dish-photos" class="photo-row"></div>
+        <label class="btn-add-photo">📷 Fotos hinzufügen
+          <input id="dish-photo-input" type="file" accept="image/*" multiple hidden />
+        </label>
+        <div id="dish-upload" class="upload-status"></div>
+        <input id="dish-url" type="url" placeholder="oder Link zu einem Rezept im Web" autocomplete="off" />
       </div>
-      <div class="field-label">Vorkochen möglich?</div>
-      <div class="seg" id="dish-preps"><button data-v="true">ja</button><button data-v="false">nein</button></div>
-      <div class="field-label">Hält in der Wärmelade / kalt gut?</div>
-      <div class="seg" id="dish-holds"><button data-v="true">ja</button><button data-v="false">nein</button></div>
-      <div class="field-row">
-        <label for="dish-finish">Minuten am Abend</label>
-        <input id="dish-finish" type="number" min="0" max="180" />
-      </div>
-      <div class="field-label">Zutaten für 5 (eine pro Zeile · 🏠 = immer zu Hause)</div>
+      <div id="dish-recipe-off" class="dish-hint hidden">Rezept-Fotos gehen nach dem nächsten Update.</div>
+
+      <div class="field-label">Was ich brauche (für 5 · 🏠 = immer zu Hause)</div>
       <div id="dish-ings"></div>
       <button class="btn-add-ing" id="dish-add-ing">+ Zutat</button>
+
+      <div class="field-label">Aufwand</div>
+      <div class="seg" id="dish-effort">
+        <button data-v="schnell">schnell</button><button data-v="mittel">mittel</button><button data-v="lang">lang</button>
+      </div>
+      <div class="seg seg-gap" id="dish-preps">
+        <button data-v="true">vorkochbar</button><button data-v="false">muss frisch</button>
+      </div>
+      <div id="dish-notfor-box">
+        <div class="field-label">Wer isst es nicht</div>
+        <div class="chips" id="dish-notfor"></div>
+      </div>
+
+      <details class="dish-more">
+        <summary>mehr</summary>
+        <div class="field-label">Hält in der Wärmelade / kalt gut?</div>
+        <div class="seg" id="dish-holds"><button data-v="true">ja</button><button data-v="false">nein</button></div>
+        <div class="field-row">
+          <label for="dish-finish">Minuten am Abend</label>
+          <input id="dish-finish" type="number" min="0" max="180" />
+        </div>
+        <div id="dish-method-box">
+          <div class="field-label">Zubereitung (kurz)</div>
+          <textarea id="dish-method" rows="5"></textarea>
+        </div>
+        <div class="field-label">Notizen</div>
+        <textarea id="dish-notes" rows="2"></textarea>
+      </details>
+
       <div class="modal-actions">
         <button class="btn-cancel" id="dish-cancel">Abbrechen</button>
         <button class="btn-save" id="dish-save">Speichern</button>
       </div>
     </div>
   </div>
+
+  <!-- Recipe view: from 📖 in the week, from a prep block's link (?gericht=<id>), from the list -->
+  <div id="recipe-modal" class="modal-backdrop hidden">
+    <div class="modal dish-modal-inner">
+      <h2 id="recipe-title"></h2>
+      <div id="recipe-photos" class="recipe-photos"></div>
+      <a id="recipe-url" class="recipe-url hidden" target="_blank" rel="noopener">Rezept im Web öffnen</a>
+      <div class="field-label">Was ich brauche (für 5)</div>
+      <ul id="recipe-ings" class="recipe-ings"></ul>
+      <div id="recipe-method-box">
+        <div class="field-label">Zubereitung</div>
+        <div id="recipe-method" class="recipe-method"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-cancel" id="recipe-close">Schließen</button>
+        <button class="btn-save" id="recipe-edit">Bearbeiten</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Full-size photo -->
+  <div id="photo-view" class="photo-view hidden"><img id="photo-view-img" alt="" /></div>
 
   <!-- Meal modal -->
   <div id="meal-modal" class="modal-backdrop hidden">

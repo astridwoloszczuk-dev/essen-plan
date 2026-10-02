@@ -345,20 +345,45 @@ wishAddBtn.addEventListener('click', async () => {
 
 wishInput.addEventListener('keydown', e => e.key === 'Enter' && wishAddBtn.click());
 
-// ── Gerichte (meal-draft's dish catalogue) ────────────────────────────────────
-// One row per dish; unreviewed first with a dot. Saving sets reviewed = true. The effort
-// buttons are coarse on purpose: an unchanged button keeps the exact minutes.
-const dishesEl   = document.getElementById('dishes');
-const dishListEl = document.getElementById('dish-list');
-const dishModal  = document.getElementById('dish-modal');
-const dishIngsEl = document.getElementById('dish-ings');
-const dishFinish = document.getElementById('dish-finish');
-const EFFORT = [30, 60, 90];
+// ── Gerichte: where a dish is defined (meal-draft addendum, 2 Oct 2026) ─────────
+// Name · her recipe (photos / link) · what she needs · three ratings (Aufwand, vorkochbar or
+// muss frisch, wer isst es nicht) · "mehr". meal_draft.py's `recipes` job reads new photos
+// within ten minutes. Before migration 06 the recipe columns don't exist: the tab still works
+// on the old columns and hides photos / chips with a one-line hint.
+const dishesEl     = document.getElementById('dishes');
+const dishListEl   = document.getElementById('dish-list');
+const dishModal    = document.getElementById('dish-modal');
+const dishIngsEl   = document.getElementById('dish-ings');
+const dishFinish   = document.getElementById('dish-finish');
+const dishNameEl   = document.getElementById('dish-name');
+const dishUrlEl    = document.getElementById('dish-url');
+const dishNotesEl  = document.getElementById('dish-notes');
+const dishMethodEl = document.getElementById('dish-method');
+const photoRowEl   = document.getElementById('dish-photos');
+const uploadEl     = document.getElementById('dish-upload');
+const recipeModal  = document.getElementById('recipe-modal');
+const photoView    = document.getElementById('photo-view');
+const BUCKET = 'recipes';
+const PEOPLE = ['Astrid', 'Niko', 'Max', 'Alex', 'Vicky'];
+const BAND_MIN = { schnell: 25, mittel: 45, lang: 75 };        // Aufwand -> active_min when no recipe time
 const UNITS = ['g', 'kg', 'ml', 'l', 'Stk', 'Bund', 'Glas', 'Pkg', 'Flasche', 'Zehen', 'EL', 'TL', 'Prise', 'Dose'];
+const MAX_PX = 1600;
 let dishes = [];
-let editingDish = null;
+let HAS_RECIPES = false;
+let editingDish = null;        // null = a new dish
+let photos = [];               // storage paths in the open editor
+let photoFolder = null;
+let pendingUploads = [];
+let holdsTouched = false;
 
-function effortOf(min) { return min <= 30 ? 30 : min <= 60 ? 60 : 90; }
+function bandOf(min) { return (min || 0) <= 30 ? 'schnell' : (min || 0) <= 60 ? 'mittel' : 'lang'; }
+function hasRecipe(d) { return !!(d && ((d.photos && d.photos.length) || d.method || d.recipe_url)); }
+function photoUrl(path) { return db.storage.from(BUCKET).getPublicUrl(path).data.publicUrl; }
+function dishKey(s) { return (s || '').replace(/^Reste:\s*/i, '').trim().toLowerCase(); }
+function dishForMeal(name) {
+  const k = dishKey(name);
+  return dishes.find(d => dishKey(d.name) === k || (d.aliases || []).some(a => dishKey(a) === k)) || null;
+}
 
 async function loadDishes() {
   const { data, error } = await db.from('dishes').select('*').order('name');
@@ -367,24 +392,29 @@ async function loadDishes() {
     return;
   }
   dishes = data || [];
+  if (dishes.length) HAS_RECIPES = 'photos' in dishes[0];
+  else HAS_RECIPES = !(await db.from('dishes').select('photos').limit(1)).error;
   if (currentTab === 'dishes') renderDishes();
+  if (currentTab === 'week') renderCalendar();
 }
 
 function renderDishes() {
+  document.getElementById('dish-new').classList.toggle('hidden', !isEditor());
   const sorted = [...dishes].sort((a, b) => (a.reviewed - b.reviewed) || a.name.localeCompare(b.name, 'de'));
   dishListEl.innerHTML = '';
   sorted.forEach(d => {
     const row = document.createElement('div');
     row.className = 'dish-row';
     const tags = [
-      `${d.active_min ?? '?'}′`,
-      d.preps_well ? 'vorkochbar' : null,
-      d.holds ? 'hält' : null,
+      bandOf(d.active_min),
+      d.preps_well ? 'vorkochbar' : 'frisch',
+      (d.not_for || []).length ? `nicht: ${(d.not_for || []).join(', ')}` : null,
     ].filter(Boolean).join(' · ');
+    const read = d.source === 'recipe' && !d.reviewed ? '<span class="dish-tag">aus dem Rezept gelesen – bitte ansehen</span>' : '';
     row.innerHTML = `<span class="dish-dot${d.reviewed ? ' done' : ''}"></span>
-      <span class="dish-name">${escapeHtml(d.name)}</span>
+      <span class="dish-name">${hasRecipe(d) ? '📖 ' : ''}${escapeHtml(d.name)} ${read}</span>
       <span class="dish-meta">${escapeHtml(tags)}</span>`;
-    row.addEventListener('click', () => openDish(d));
+    row.addEventListener('click', () => (isEditor() ? openDish(d) : openRecipe(d)));
     dishListEl.appendChild(row);
   });
 }
@@ -426,21 +456,115 @@ function segValue(id) {
   return b ? b.dataset.v : null;
 }
 ['dish-effort', 'dish-preps', 'dish-holds'].forEach(id =>
-  document.querySelectorAll(`#${id} button`).forEach(b => b.addEventListener('click', () => setSeg(id, b.dataset.v))));
+  document.querySelectorAll(`#${id} button`).forEach(b => b.addEventListener('click', () => {
+    setSeg(id, b.dataset.v);
+    if (id === 'dish-holds') holdsTouched = true;
+    // "hält" defaults to the Vorkochbar answer until she sets it herself
+    if (id === 'dish-preps' && !holdsTouched) setSeg('dish-holds', b.dataset.v);
+  })));
+
+function renderChips(selected) {
+  const box = document.getElementById('dish-notfor');
+  box.innerHTML = '';
+  PEOPLE.forEach(n => {
+    const b = document.createElement('button');
+    b.textContent = n;
+    b.classList.toggle('active', selected.includes(n));
+    b.addEventListener('click', () => b.classList.toggle('active'));
+    box.appendChild(b);
+  });
+}
+
+function renderPhotos() {
+  photoRowEl.innerHTML = '';
+  photos.forEach((p, i) => {
+    const t = document.createElement('div');
+    t.className = 'photo-thumb';
+    t.innerHTML = `<img src="${photoUrl(p)}" alt="Rezeptseite ${i + 1}" /><button title="entfernen">✕</button>`;
+    t.querySelector('img').addEventListener('click', () => showPhoto(photoUrl(p)));
+    t.querySelector('button').addEventListener('click', () => { photos.splice(i, 1); renderPhotos(); });
+    photoRowEl.appendChild(t);
+  });
+}
+
+function showPhoto(url) {
+  document.getElementById('photo-view-img').src = url;
+  photoView.classList.remove('hidden');
+}
+photoView.addEventListener('click', () => photoView.classList.add('hidden'));
+
+// Downscale in the browser (<= 1600 px, JPEG) before upload — phone photos are 4–12 MB.
+async function downscale(file) {
+  const bmp = await createImageBitmap(file);
+  const k = Math.min(1, MAX_PX / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas');
+  c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+  return await new Promise(res => c.toBlob(res, 'image/jpeg', 0.85));
+}
+
+document.getElementById('dish-photo-input').addEventListener('change', e => {
+  const files = [...e.target.files];
+  e.target.value = '';
+  if (!files.length) return;
+  let done = 0, failed = 0;
+  uploadEl.textContent = `Foto 1 von ${files.length} wird hochgeladen …`;
+  const job = (async () => {
+    for (const [i, f] of files.entries()) {
+      uploadEl.textContent = `Foto ${i + 1} von ${files.length} wird hochgeladen …`;
+      try {
+        const blob = await downscale(f);
+        const path = `${photoFolder}/${Date.now()}-${i}.jpg`;
+        const { error } = await db.storage.from(BUCKET).upload(path, blob, { contentType: 'image/jpeg' });
+        if (error) throw error;
+        photos.push(path); done++; renderPhotos();
+      } catch (err) {
+        failed++; console.error(err);
+      }
+    }
+    uploadEl.textContent = failed
+      ? `${failed} Foto(s) nicht hochgeladen – das Gericht lässt sich trotzdem speichern.`
+      : `${done} Foto(s) hochgeladen – das Rezept wird in ein paar Minuten gelesen.`;
+  })();
+  pendingUploads.push(job);
+});
 
 function openDish(d) {
   if (!isEditor()) return;
-  editingDish = d;
-  document.getElementById('dish-title').textContent = d.name;
-  setSeg('dish-effort', effortOf(d.active_min || 0));
+  editingDish = d || null;
+  d = d || { name: '', ingredients: [], active_min: BAND_MIN.mittel, preps_well: true, holds: true, not_for: [], photos: [] };
+  photos = [...(d.photos || [])];
+  photoFolder = d.id || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
+  pendingUploads = [];
+  holdsTouched = !!editingDish;               // an existing dish keeps its own "hält"
+  dishNameEl.value = d.name || '';
+  dishUrlEl.value = d.recipe_url || '';
+  dishNotesEl.value = d.notes || '';
+  dishMethodEl.value = d.method || '';
+  uploadEl.textContent = '';
+  const note = d.source === 'recipe' && !d.reviewed ? 'Aus dem Rezept gelesen – bitte ansehen und speichern.' : '';
+  const readNote = [note, d.recipe_note].filter(Boolean).join(' · ');
+  const rn = document.getElementById('dish-readnote');
+  rn.textContent = readNote; rn.classList.toggle('hidden', !readNote);
+  document.getElementById('dish-recipe-box').classList.toggle('hidden', !HAS_RECIPES);
+  document.getElementById('dish-recipe-off').classList.toggle('hidden', HAS_RECIPES);
+  document.getElementById('dish-notfor-box').classList.toggle('hidden', !HAS_RECIPES);
+  document.getElementById('dish-method-box').classList.toggle('hidden', !HAS_RECIPES);
+  renderPhotos();
+  renderChips(d.not_for || []);
+  setSeg('dish-effort', bandOf(d.active_min));
   setSeg('dish-preps', !!d.preps_well);
   setSeg('dish-holds', !!d.holds);
   dishFinish.value = d.finish_min ?? '';
   dishIngsEl.innerHTML = '';
   (d.ingredients || []).forEach(x => dishIngsEl.appendChild(ingRow(x)));
+  if (!(d.ingredients || []).length) dishIngsEl.appendChild(ingRow(null));
+  recipeModal.classList.add('hidden');
   dishModal.classList.remove('hidden');
+  if (!editingDish) dishNameEl.focus();
 }
 
+document.getElementById('dish-new').addEventListener('click', () => openDish(null));
 document.getElementById('dish-add-ing').addEventListener('click', () => {
   const r = ingRow(null);
   dishIngsEl.appendChild(r);
@@ -450,28 +574,95 @@ document.getElementById('dish-cancel').addEventListener('click', () => dishModal
 dishModal.addEventListener('click', e => { if (e.target === dishModal) dishModal.classList.add('hidden'); });
 
 document.getElementById('dish-save').addEventListener('click', async () => {
-  const d = editingDish;
-  if (!d) return;
-  const effort = Number(segValue('dish-effort'));
+  const d = editingDish || {};
+  const name = dishNameEl.value.trim();
+  if (!name) { dishNameEl.focus(); return; }
+  const saveBtn = document.getElementById('dish-save');
+  saveBtn.disabled = true;
+  // wait for photos still uploading — a failed upload never blocks the save
+  await Promise.allSettled(pendingUploads);
   const ingredients = [...dishIngsEl.querySelectorAll('.ing-row')]
     .map(r => ({ line: r.querySelector('input').value, home: r.querySelector('.ing-home').classList.contains('active') }))
     .filter(x => x.line.trim())
     .map(x => ({ ...parseIng(x.line, d.ingredients), always_home: x.home }));
+  const band = segValue('dish-effort') || 'mittel';
   const patch = {
-    active_min: effort === effortOf(d.active_min || 0) ? d.active_min : effort,
+    name,
+    // the rating only rewrites the minutes when it moves the dish into another band
+    active_min: editingDish && bandOf(d.active_min) === band ? d.active_min : BAND_MIN[band],
     preps_well: segValue('dish-preps') === 'true',
     holds: segValue('dish-holds') === 'true',
     finish_min: dishFinish.value === '' ? null : parseInt(dishFinish.value, 10),
     ingredients,
+    notes: dishNotesEl.value.trim() || null,
     reviewed: true,
     updated_at: new Date().toISOString(),
   };
-  const { error } = await db.from('dishes').update(patch).eq('id', d.id);
+  if (HAS_RECIPES) {
+    const url = dishUrlEl.value.trim() || null;
+    const recipeChanged = JSON.stringify(photos) !== JSON.stringify(d.photos || []) || url !== (d.recipe_url || null);
+    const listChanged = JSON.stringify(ingredients) !== JSON.stringify(d.ingredients || []);
+    Object.assign(patch, {
+      photos, recipe_url: url,
+      not_for: [...document.querySelectorAll('#dish-notfor button.active')].map(b => b.textContent),
+      method: dishMethodEl.value.trim() || null,
+      source: listChanged ? 'own' : (d.source || 'own'),
+    });
+    if (recipeChanged) Object.assign(patch, { recipe_read_at: null, recipe_attempts: 0, recipe_note: null });
+    // New photos and no lines typed yet: leave it unchecked so the reader may fill the list.
+    if (recipeChanged && (photos.length || url) && !ingredients.length) patch.reviewed = false;
+  }
+  const q = editingDish
+    ? db.from('dishes').update(patch).eq('id', d.id)
+    : db.from('dishes').insert({ ...patch, aliases: [] });
+  const { error } = await q;
+  saveBtn.disabled = false;
   if (error) { alert('Speichern ging nicht: ' + error.message); return; }
-  Object.assign(d, patch);
+  const removed = (d.photos || []).filter(p => !photos.includes(p));
+  if (removed.length) db.storage.from(BUCKET).remove(removed).catch(() => {});   // tidy, best effort
   dishModal.classList.add('hidden');
-  renderDishes();
+  await loadDishes();
 });
+
+// ── Recipe view: 📖 in the week, the prep block's link (?gericht=<id>), the list ──
+let viewingDish = null;
+function openRecipe(d) {
+  if (!d) return;
+  viewingDish = d;
+  document.getElementById('recipe-title').textContent = d.name;
+  const ph = document.getElementById('recipe-photos');
+  ph.innerHTML = '';
+  (d.photos || []).forEach(p => {
+    const img = document.createElement('img');
+    img.src = photoUrl(p); img.alt = d.name;
+    img.addEventListener('click', () => showPhoto(img.src));
+    ph.appendChild(img);
+  });
+  const a = document.getElementById('recipe-url');
+  a.href = d.recipe_url || '#'; a.classList.toggle('hidden', !d.recipe_url);
+  document.getElementById('recipe-ings').innerHTML = (d.ingredients || [])
+    .map(x => `<li class="${x.always_home ? 'home' : ''}">${escapeHtml(fmtIng(x))}${x.always_home ? ' 🏠' : ''}</li>`).join('')
+    || '<li>noch keine Zutaten</li>';
+  document.getElementById('recipe-method').textContent = d.method || '';
+  document.getElementById('recipe-method-box').classList.toggle('hidden', !d.method);
+  document.getElementById('recipe-edit').classList.toggle('hidden', !isEditor());
+  recipeModal.classList.remove('hidden');
+}
+document.getElementById('recipe-close').addEventListener('click', () => recipeModal.classList.add('hidden'));
+document.getElementById('recipe-edit').addEventListener('click', () => openDish(viewingDish));
+recipeModal.addEventListener('click', e => { if (e.target === recipeModal) recipeModal.classList.add('hidden'); });
+
+// ?gericht=<id> opens that recipe directly (the link in the 🍳 prep block)
+async function openFromUrl() {
+  const id = new URLSearchParams(location.search).get('gericht');
+  if (!id) return;
+  let d = dishes.find(x => String(x.id) === id);
+  if (!d) {
+    const { data } = await db.from('dishes').select('*').eq('id', id).maybeSingle();
+    d = data;
+  }
+  if (d) openRecipe(d);
+}
 
 // ── Render calendar ───────────────────────────────────────────────────────────
 function renderCalendar() {
@@ -526,6 +717,7 @@ function renderCalendar() {
           <span class="meal-name">${escapeHtml(meal.dish)}</span>
           ${ratingsSummary ? `<span class="meal-stars">${escapeHtml(ratingsSummary)}</span>` : ''}
           ${meal.notes ? `<span class="meal-notes-dot" title="${escapeHtml(meal.notes)}">📝</span>` : ''}
+          ${hasRecipe(dishForMeal(meal.dish)) ? `<span class="meal-recipe" title="Rezept">📖</span>` : ''}
           ${attendSummary ? `<span class="meal-attend">${escapeHtml(attendSummary)}</span>` : ''}
           <span class="meal-status">${cs.emoji}</span>
         `;
@@ -535,6 +727,9 @@ function renderCalendar() {
           <span class="meal-empty">${isEditor() && !past ? (pendingWish ? '+ Place here' : '+ Add') : '—'}</span>
         `;
       }
+
+      const rec = meal ? slot.querySelector('.meal-recipe') : null;
+      if (rec) rec.addEventListener('click', e => { e.stopPropagation(); openRecipe(dishForMeal(meal.dish)); });
 
       if (clickable) {
         slot.addEventListener('click', () =>
@@ -584,11 +779,13 @@ db.channel('essen_changes')
   .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_plan' },    () => loadMeals())
   .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_ratings' }, () => loadMeals())
   .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_wishes' },  () => loadWishes())
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'dishes' },       () => loadDishes())
   .subscribe();
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 if (!currentUser) { showUserModal(); } else { userBadge.textContent = currentUser; }
 loadMeals();
 loadWishes();
+loadDishes().then(openFromUrl);
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
