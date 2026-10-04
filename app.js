@@ -370,6 +370,13 @@ const UNITS = ['g', 'kg', 'ml', 'l', 'Stk', 'Bund', 'Glas', 'Pkg', 'Flasche', 'Z
 const MAX_PX = 1600;
 let dishes = [];
 let HAS_RECIPES = false;
+// Batch cooking + the freezer + desserts (meal-draft addendum 2, 3 Oct 2026). One number per batch:
+// portions, with the date. Before migration 07 (no `freezer` table, no `freezes` / `kind`) every
+// freezer part is hidden behind one hint line.
+let HAS_FREEZER = false;
+let freezer = [];              // rows of the `freezer` table
+let dishFilter = null;         // null | 'frz' | 'prep' | 'freeze' | 'dessert'
+const KIND_LABEL = { hauptgericht: 'Hauptgericht', nachspeise: 'Nachspeise', beilage: 'Beilage' };
 let editingDish = null;        // null = a new dish
 let photos = [];               // storage paths in the open editor
 let photoFolder = null;
@@ -394,30 +401,152 @@ async function loadDishes() {
   dishes = data || [];
   if (dishes.length) HAS_RECIPES = 'photos' in dishes[0];
   else HAS_RECIPES = !(await db.from('dishes').select('photos').limit(1)).error;
+  const hasCols = dishes.length ? 'kind' in dishes[0] : !(await db.from('dishes').select('kind').limit(1)).error;
+  HAS_FREEZER = hasCols && await loadFreezer();
   if (currentTab === 'dishes') renderDishes();
   if (currentTab === 'week') renderCalendar();
 }
 
+// ── the freezer ──
+async function loadFreezer() {
+  const { data, error } = await db.from('freezer').select('*').order('frozen_at');
+  if (error) { freezer = []; return false; }
+  freezer = data || [];
+  return true;
+}
+function todayISO() { return toISODate(new Date()); }
+function addMonthsISO(iso, n) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const last = new Date(y, m - 1 + n + 1, 0).getDate();        // last day of the target month
+  return toISODate(new Date(y, m - 1 + n, Math.min(d, last)));
+}
+function shortDate(iso) { const [, m, d] = iso.split('-').map(Number); return `${d}.${m}.`; }
+function ageText(iso) {
+  const days = Math.round((new Date(todayISO() + 'T12:00:00') - new Date(iso + 'T12:00:00')) / 86400000);
+  if (days < 1) return 'heute';
+  if (days < 14) return `${days} Tage`;
+  if (days < 63) return `${Math.floor(days / 7)} Wochen`;
+  return `${Math.floor(days / 30.4)} Monate`;
+}
+// meal-draft's rule: a planned batch counts as stock from the morning after its prep day
+function isReal(r) { return r.portions > 0 && (!r.planned || r.frozen_at < todayISO()); }
+function stockRows(d) { return freezer.filter(r => r.dish_id === d.id && r.portions > 0); }
+function stockOf(d) {
+  const rows = stockRows(d);
+  if (!rows.length) return null;
+  const real = rows.filter(isReal);
+  const use = real.length ? real : rows;
+  return { portions: use.reduce((s, r) => s + r.portions, 0), oldest: use[0].frozen_at, planned: !real.length };
+}
+function ageClass(iso) {
+  const t = todayISO();
+  return t >= addMonthsISO(iso, 4) ? ' old' : t >= addMonthsISO(iso, 3) ? ' aging' : '';
+}
+function stockTag(d, withAge) {
+  const s = stockOf(d);
+  if (!s) return '';
+  const txt = s.planned
+    ? `❄ ${s.portions} geplant · ${shortDate(s.oldest)}`
+    : `❄ ${s.portions} Portionen · seit ${shortDate(s.oldest)}` + (withAge ? ` (${ageText(s.oldest)})` : '');
+  return `<span class="frz-tag${s.planned ? '' : ageClass(s.oldest)}">${escapeHtml(txt)}</span>`;
+}
+
+function renderFilters() {
+  const box = document.getElementById('dish-filters');
+  const chips = HAS_FREEZER
+    ? [['frz', '❄ Tiefkühler'], ['prep', 'vorkochbar'], ['freeze', 'einfrierbar'], ['dessert', 'Nachspeisen']]
+    : [['prep', 'vorkochbar']];
+  if (!chips.some(([k]) => k === dishFilter)) dishFilter = null;
+  box.innerHTML = '';
+  chips.forEach(([k, label]) => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.classList.toggle('active', dishFilter === k);
+    b.addEventListener('click', () => { dishFilter = dishFilter === k ? null : k; renderDishes(); });
+    box.appendChild(b);
+  });
+  document.getElementById('dish-freezer-off').classList.toggle('hidden', HAS_FREEZER);
+}
+
 function renderDishes() {
   document.getElementById('dish-new').classList.toggle('hidden', !isEditor());
-  const sorted = [...dishes].sort((a, b) => (a.reviewed - b.reviewed) || a.name.localeCompare(b.name, 'de'));
-  dishListEl.innerHTML = '';
-  sorted.forEach(d => {
+  renderFilters();
+  let list = [...dishes].sort((a, b) => (a.reviewed - b.reviewed) || a.name.localeCompare(b.name, 'de'));
+  if (dishFilter === 'frz') {
+    // only dishes with stock, oldest first, with the age
+    list = list.filter(d => stockOf(d)).sort((a, b) => stockOf(a).oldest.localeCompare(stockOf(b).oldest));
+  } else if (dishFilter === 'prep') list = list.filter(d => d.preps_well);
+  else if (dishFilter === 'freeze') list = list.filter(d => d.freezes);
+  else if (dishFilter === 'dessert') list = list.filter(d => d.kind === 'nachspeise');
+  dishListEl.innerHTML = list.length ? '' : '<div class="wish-empty">Nichts in dieser Auswahl.</div>';
+  list.forEach(d => {
     const row = document.createElement('div');
     row.className = 'dish-row';
+    const kind = d.kind && d.kind !== 'hauptgericht' ? KIND_LABEL[d.kind] : null;
     const tags = [
       bandOf(d.active_min),
-      d.preps_well ? 'vorkochbar' : 'frisch',
+      kind || (d.preps_well ? 'vorkochbar' : 'frisch'),
       (d.not_for || []).length ? `nicht: ${(d.not_for || []).join(', ')}` : null,
     ].filter(Boolean).join(' · ');
     const read = d.source === 'recipe' && !d.reviewed ? '<span class="dish-tag">aus dem Rezept gelesen – bitte ansehen</span>' : '';
     row.innerHTML = `<span class="dish-dot${d.reviewed ? ' done' : ''}"></span>
-      <span class="dish-name">${hasRecipe(d) ? '📖 ' : ''}${escapeHtml(d.name)} ${read}</span>
+      <span class="dish-name">${hasRecipe(d) ? '📖 ' : ''}${escapeHtml(d.name)} ${read}${HAS_FREEZER ? stockTag(d, dishFilter === 'frz') : ''}</span>
       <span class="dish-meta">${escapeHtml(tags)}</span>`;
     row.addEventListener('click', () => (isEditor() ? openDish(d) : openRecipe(d)));
     dishListEl.appendChild(row);
   });
 }
+
+// The editor's freezer box: each batch with −1 / aufgebraucht, and "+ eingefroren". Writes at once
+// (no Speichern needed) — the one number she keeps.
+function renderFreezerBox() {
+  const list = document.getElementById('dish-freezer-list');
+  const add = document.getElementById('frz-new');
+  list.innerHTML = '';
+  if (!editingDish) {
+    list.innerHTML = '<div class="dish-hint">Erst speichern, dann einfrieren.</div>';
+    add.classList.add('hidden');
+    document.getElementById('frz-form').classList.add('hidden');
+    return;
+  }
+  add.classList.remove('hidden');
+  stockRows(editingDish).forEach(r => {
+    const row = document.createElement('div');
+    row.className = 'frz-row';
+    const label = isReal(r)
+      ? `${r.portions} Portionen · seit ${shortDate(r.frozen_at)} (${ageText(r.frozen_at)})`
+      : `${r.portions} Portionen geplant · Batch am ${shortDate(r.frozen_at)}`;
+    row.innerHTML = `<span class="frz-label${isReal(r) ? ageClass(r.frozen_at) : ''}">❄ ${escapeHtml(label)}</span>
+      <button data-a="minus">−1</button><button data-a="gone">aufgebraucht</button>`;
+    row.querySelector('[data-a="minus"]').addEventListener('click', () => freezerWrite(
+      r.portions <= 1 ? db.from('freezer').delete().eq('id', r.id)
+        : db.from('freezer').update({ portions: r.portions - 1, planned: false, updated_at: new Date().toISOString() }).eq('id', r.id)));
+    row.querySelector('[data-a="gone"]').addEventListener('click', () =>
+      freezerWrite(db.from('freezer').delete().eq('id', r.id)));
+    list.appendChild(row);
+  });
+}
+
+async function freezerWrite(q) {
+  const { error } = await q;
+  if (error) { alert('Tiefkühler: das ging nicht – ' + error.message); return; }
+  await loadFreezer();
+  renderFreezerBox();
+  if (currentTab === 'dishes') renderDishes();
+}
+
+document.getElementById('frz-new').addEventListener('click', () => {
+  document.getElementById('frz-portions').value = 5;
+  document.getElementById('frz-date').value = todayISO();
+  document.getElementById('frz-form').classList.remove('hidden');
+});
+document.getElementById('frz-ok').addEventListener('click', async () => {
+  const portions = parseInt(document.getElementById('frz-portions').value, 10);
+  const frozen_at = document.getElementById('frz-date').value || todayISO();
+  if (!editingDish || !(portions > 0)) return;
+  document.getElementById('frz-form').classList.add('hidden');
+  await freezerWrite(db.from('freezer').insert({ dish_id: editingDish.id, portions, frozen_at, planned: false }));
+});
 
 function fmtIng(x) {
   const q = x.qty ? String(x.qty).replace('.', ',') + ' ' : '';
@@ -455,7 +584,7 @@ function segValue(id) {
   const b = document.querySelector(`#${id} button.active`);
   return b ? b.dataset.v : null;
 }
-['dish-effort', 'dish-preps', 'dish-holds'].forEach(id =>
+['dish-effort', 'dish-preps', 'dish-holds', 'dish-freezes', 'dish-kind'].forEach(id =>
   document.querySelectorAll(`#${id} button`).forEach(b => b.addEventListener('click', () => {
     setSeg(id, b.dataset.v);
     if (id === 'dish-holds') holdsTouched = true;
@@ -532,7 +661,8 @@ document.getElementById('dish-photo-input').addEventListener('change', e => {
 function openDish(d) {
   if (!isEditor()) return;
   editingDish = d || null;
-  d = d || { name: '', ingredients: [], active_min: BAND_MIN.mittel, preps_well: true, holds: true, not_for: [], photos: [] };
+  d = d || { name: '', ingredients: [], active_min: BAND_MIN.mittel, preps_well: true, holds: true, not_for: [], photos: [],
+             freezes: false, kind: 'hauptgericht' };
   photos = [...(d.photos || [])];
   photoFolder = d.id || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
   pendingUploads = [];
@@ -550,6 +680,13 @@ function openDish(d) {
   document.getElementById('dish-recipe-off').classList.toggle('hidden', HAS_RECIPES);
   document.getElementById('dish-notfor-box').classList.toggle('hidden', !HAS_RECIPES);
   document.getElementById('dish-method-box').classList.toggle('hidden', !HAS_RECIPES);
+  ['dish-freezes', 'dish-kind-box', 'dish-freezer-box'].forEach(id =>
+    document.getElementById(id).classList.toggle('hidden', !HAS_FREEZER));
+  document.getElementById('dish-freezer-off-ed').classList.toggle('hidden', HAS_FREEZER);
+  setSeg('dish-freezes', !!d.freezes);
+  setSeg('dish-kind', d.kind || 'hauptgericht');
+  document.getElementById('frz-form').classList.add('hidden');
+  if (HAS_FREEZER) renderFreezerBox();
   renderPhotos();
   renderChips(d.not_for || []);
   setSeg('dish-effort', bandOf(d.active_min));
@@ -609,6 +746,10 @@ document.getElementById('dish-save').addEventListener('click', async () => {
       source: listChanged ? 'own' : (d.source || 'own'),
     });
     if (recipeChanged) Object.assign(patch, { recipe_read_at: null, recipe_attempts: 0, recipe_note: null });
+    if (HAS_FREEZER) Object.assign(patch, {
+      freezes: segValue('dish-freezes') === 'true',
+      kind: segValue('dish-kind') || 'hauptgericht',
+    });
     // New photos and no lines typed yet: leave it unchecked so the reader may fill the list.
     if (recipeChanged && (photos.length || url) && !ingredients.length) patch.reviewed = false;
   }
@@ -780,6 +921,10 @@ db.channel('essen_changes')
   .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_ratings' }, () => loadMeals())
   .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_wishes' },  () => loadWishes())
   .on('postgres_changes', { event: '*', schema: 'public', table: 'dishes' },       () => loadDishes())
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'freezer' },      () => loadFreezer().then(() => {
+    if (currentTab === 'dishes') renderDishes();
+    if (!dishModal.classList.contains('hidden') && HAS_FREEZER) renderFreezerBox();
+  }))
   .subscribe();
 
 // ── Init ──────────────────────────────────────────────────────────────────────
