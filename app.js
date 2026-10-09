@@ -929,6 +929,8 @@ db.channel('essen_changes')
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 if (!currentUser) { showUserModal(); } else { userBadge.textContent = currentUser; }
+// ?woche=-1|0|1 opens Last / This / Next Week (the link in James's Thursday draft message, 9 Oct 2026)
+{ const w = new URLSearchParams(location.search).get('woche'); if (['-1', '0', '1'].includes(w)) switchTab(w); }
 loadMeals();
 loadWishes();
 loadDishes().then(openFromUrl);
