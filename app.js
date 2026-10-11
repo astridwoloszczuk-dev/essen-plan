@@ -108,6 +108,7 @@ statusBtns.forEach(btn => {
   btn.addEventListener('click', () => {
     selectedStatus = btn.dataset.status;
     statusBtns.forEach(b => b.classList.toggle('active', b.dataset.status === selectedStatus));
+    syncCookSuggest();
   });
 });
 
@@ -201,6 +202,7 @@ function openMealModal(dateStr, mealType, existingMeal = null, prefillDish = nul
     notesInput.value = existingMeal?.notes || '';
     selectedStatus   = existingMeal?.cook_status || 'scratch';
     statusBtns.forEach(b => b.classList.toggle('active', b.dataset.status === selectedStatus));
+    syncCookSuggest();
     const existing_attendees = existingMeal?.attendees || [];
     attendBtns.forEach(b => b.classList.toggle('active', existing_attendees.includes(b.dataset.name)));
     guestInput.value = existingMeal?.guest_count || 0;
@@ -906,6 +908,18 @@ function renderCook() {
   });
 }
 
+// 🥡 meals: the dish field suggests his names from the Soulkitchen list, so what she orders lands
+// on the same row James counts (her ask, 11 Oct: "I will never type it in consistently")
+function syncCookSuggest() {
+  const on = selectedStatus === 'soulkitchen' && cookDishes && cookDishes.length;
+  if (!on) { dishInput.removeAttribute('list'); return; }
+  const names = cookDishes.filter(d => d.mark !== 'never')
+    .sort((a, b) => ((b.mark === 'star') - (a.mark === 'star')) || a.name.localeCompare(b.name, 'de'))
+    .map(d => `<option value="${escapeHtml(d.name)}"></option>`);
+  document.getElementById('cook-names').innerHTML = names.join('');
+  dishInput.setAttribute('list', 'cook-names');
+}
+
 function renderCookCourse() {
   const box = document.getElementById('cook-course');
   box.innerHTML = '';
@@ -1052,7 +1066,7 @@ db.channel('essen_changes')
   .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_ratings' }, () => loadMeals())
   .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_wishes' },  () => loadWishes())
   .on('postgres_changes', { event: '*', schema: 'public', table: 'dishes' },       () => loadDishes())
-  .on('postgres_changes', { event: '*', schema: 'public', table: 'cook_dishes' },  () => { if (currentTab === 'cook') loadCook(); })
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'cook_dishes' },  () => loadCook())
   .on('postgres_changes', { event: '*', schema: 'public', table: 'freezer' },      () => loadFreezer().then(() => {
     if (currentTab === 'dishes') renderDishes();
     if (!dishModal.classList.contains('hidden') && HAS_FREEZER) renderFreezerBox();
@@ -1068,5 +1082,6 @@ if (new URLSearchParams(location.search).get('tab') === 'soulkitchen') switchTab
 loadMeals();
 loadWishes();
 loadDishes().then(openFromUrl);
+loadCook();                    // the 🥡 name suggestions need the list before the Soulkitchen tab is opened
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
