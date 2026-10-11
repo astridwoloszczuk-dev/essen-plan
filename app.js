@@ -811,7 +811,7 @@ async function openFromUrl() {
 
 // ── Soulkitchen: every dish Prandstätter has offered, ⭐ and nicht mehr (11 Oct 2026) ──────────
 // Table cook_dishes (meal-draft migration 08). James's nightly export adds his current menu from
-// the order page (new dishes + last_seen); her marks, notes and courses are only written here.
+// the order page (last_menu) and what we had from him, off-menu too (last_ordered); her marks, notes and courses are only written here.
 // meal-draft's Monday pick prefers ⭐ and never picks ✕.
 const cookEl = document.getElementById('cook');
 const cookListEl = document.getElementById('cook-list');
@@ -853,7 +853,7 @@ function renderCook() {
     return;
   }
   const weeks = menuWeeks();
-  const onMenu = d => weeks.includes(d.last_seen);
+  const onMenu = d => weeks.includes(d.last_menu);
   const nNever = cookDishes.filter(d => d.mark === 'never').length;
   [['star', '⭐ Favoriten'], ['menu', 'Am Menü'], ['never', `Nicht mehr (${nNever})`]].forEach(([k, label]) => {
     const b = document.createElement('button');
@@ -881,7 +881,9 @@ function renderCook() {
     rows.forEach(d => {
       const row = document.createElement('div');
       row.className = 'cook-row' + (d.mark === 'star' ? ' fav' : '');
-      const kwTag = onMenu(d) ? `<span class="cook-kw">${escapeHtml(d.last_seen.split('-')[1])}</span>` : '';
+      const kwTag = onMenu(d) ? `<span class="cook-kw">${d.last_menu === weeks[0] ? 'diese Woche' : 'nächste Woche'}</span>` : '';
+      const had = d.last_ordered ? `bei uns zuletzt ${shortDate(d.last_ordered)}` : '';
+      const meta = [had, d.note].filter(Boolean).join(' · ');
       const buttons = !editor ? (d.mark === 'star' ? '<span class="cook-btn on">★</span>' : '')
         : d.mark === 'never'
           ? '<button class="cook-btn x" data-a="back" title="zurück in die Liste">↩</button>'
@@ -889,7 +891,7 @@ function renderCook() {
              <button class="cook-btn x" data-a="never" title="nicht mehr bestellen">✕</button>`;
       row.innerHTML = `<div class="cook-main">
           <div class="cook-name">${escapeHtml(d.name)}${kwTag}</div>
-          ${d.note ? `<div class="cook-note">${escapeHtml(d.note)}</div>` : ''}
+          ${meta ? `<div class="cook-note">${escapeHtml(meta)}</div>` : ''}
         </div>${buttons}`;
       if (editor) row.querySelector('.cook-main').addEventListener('click', () => openCook(d));
       const act = (a, patch) => {
