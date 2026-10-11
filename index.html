@@ -51,13 +51,13 @@
 
     /* ── Tabs ── */
     .tab-bar {
-      background: white; display: flex;
+      background: white; display: flex; overflow-x: auto; scrollbar-width: none;
       position: sticky; top: 56px; z-index: 9;
       border-bottom: 1px solid var(--gray-200);
       box-shadow: 0 1px 3px rgba(0,0,0,.06);
     }
     .tab-btn {
-      flex: 1; padding: 12px 0; font-size: .88rem; font-weight: 600;
+      flex: 1 0 auto; padding: 12px 8px; white-space: nowrap; font-size: .88rem; font-weight: 600;
       background: none; border: none; cursor: pointer; color: var(--gray-400);
       border-bottom: 2.5px solid transparent; transition: color .15s, border-color .15s;
     }
@@ -340,6 +340,23 @@
     .frz-form span { font-size: .85rem; color: var(--gray-600); }
     .frz-form button.ok { border-color: var(--orange); background: var(--orange); color: white; }
     .seg-3 button { font-size: .76rem; }
+    /* ── Soulkitchen: Prandstätter's dishes, ⭐ and nicht mehr (11 Oct 2026) ── */
+    #cook { padding: 12px 16px 32px; }
+    .cook-section { font-size: .75rem; font-weight: 700; color: var(--gray-400); text-transform: uppercase;
+      letter-spacing: .05em; margin: 14px 0 6px; }
+    .cook-row { background: white; border-radius: 12px; padding: 8px 8px 8px 14px; margin-bottom: 6px;
+      display: flex; align-items: center; gap: 6px; }
+    .cook-row.fav { background: #fffbeb; }
+    .cook-main { flex: 1; min-width: 0; cursor: pointer; }
+    .cook-name { font-size: .92rem; font-weight: 500; }
+    .cook-note { font-size: .76rem; color: var(--gray-400); margin-top: 2px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cook-kw { font-size: .68rem; background: var(--orange-lt); color: var(--orange); border-radius: 999px;
+      padding: 1px 6px; white-space: nowrap; margin-left: 4px; font-weight: 600; }
+    .cook-btn { flex: none; border: none; background: none; font-size: 1.25rem; line-height: 1;
+      padding: 6px; cursor: pointer; color: var(--gray-400); }
+    .cook-btn.on { color: #f59e0b; }
+    .cook-btn.x { font-size: 1rem; }
   </style>
 </head>
 <body>
@@ -355,6 +372,7 @@
     <button class="tab-btn" data-tab="1">Next Week</button>
     <button class="tab-btn" data-tab="wishlist">Wishlist</button>
     <button class="tab-btn" data-tab="dishes">Gerichte</button>
+    <button class="tab-btn" data-tab="cook">Soulkitchen</button>
   </div>
 
   <div id="use-banner" class="use-banner hidden">
@@ -381,6 +399,29 @@
     <div class="fchips" id="dish-filters"></div>
     <div id="dish-freezer-off" class="dish-hint hidden">Tiefkühler kommt mit dem nächsten Update.</div>
     <div id="dish-list"></div>
+  </div>
+
+  <!-- Soulkitchen: every dish Prandstätter has offered (11 Oct 2026). James adds his new menu every
+       night from the order page; ⭐ = lieben wir, ✕ = nicht mehr — the Monday pick reads both. -->
+  <div id="cook" class="hidden">
+    <div class="dish-hint">⭐ = lieben wir · ✕ = nicht mehr bestellen. Seine neuen Gerichte kommen jede Woche von selbst dazu.</div>
+    <div class="fchips" id="cook-filters"></div>
+    <div id="cook-list"></div>
+  </div>
+
+  <!-- Soulkitchen dish: course + note -->
+  <div id="cook-modal" class="modal-backdrop hidden">
+    <div class="modal dish-modal-inner">
+      <input id="cook-name" class="dish-name-input" type="text" autocomplete="off" />
+      <div class="field-label">Art</div>
+      <div class="chips fchips" id="cook-course"></div>
+      <div class="field-label">Notiz</div>
+      <textarea id="cook-note" rows="3" placeholder="z.B. zu scharf für Vicky, Portion reicht für 6"></textarea>
+      <div class="modal-actions">
+        <button class="btn-cancel" id="cook-cancel">Abbrechen</button>
+        <button class="btn-save" id="cook-save">Speichern</button>
+      </div>
+    </div>
   </div>
 
   <!-- Dish editor -->

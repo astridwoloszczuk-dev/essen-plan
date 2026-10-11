@@ -131,14 +131,18 @@ starEls.forEach(s => {
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 function switchTab(tabValue) {
-  currentTab = ['wishlist', 'dishes'].includes(tabValue) ? tabValue : 'week';
+  currentTab = ['wishlist', 'dishes', 'cook'].includes(tabValue) ? tabValue : 'week';
   document.querySelectorAll('.tab-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.tab === tabValue)
   );
   calendarEl.classList.toggle('hidden', currentTab !== 'week');
   wishlistEl.classList.toggle('hidden', currentTab !== 'wishlist');
   dishesEl.classList.toggle('hidden', currentTab !== 'dishes');
-  if (currentTab === 'wishlist') {
+  cookEl.classList.toggle('hidden', currentTab !== 'cook');
+  if (currentTab === 'cook') {
+    useBanner.classList.add('hidden');
+    loadCook();
+  } else if (currentTab === 'wishlist') {
     useBanner.classList.add('hidden');
   } else if (currentTab === 'dishes') {
     useBanner.classList.add('hidden');
@@ -805,6 +809,131 @@ async function openFromUrl() {
   if (d) openRecipe(d);
 }
 
+// ── Soulkitchen: every dish Prandstätter has offered, ⭐ and nicht mehr (11 Oct 2026) ──────────
+// Table cook_dishes (meal-draft migration 08). James's nightly export adds his current menu from
+// the order page (new dishes + last_seen); her marks, notes and courses are only written here.
+// meal-draft's Monday pick prefers ⭐ and never picks ✕.
+const cookEl = document.getElementById('cook');
+const cookListEl = document.getElementById('cook-list');
+const cookModal = document.getElementById('cook-modal');
+const COURSES = [['suppe', 'Suppen'], ['salat', 'Salate'], ['hauptgericht', 'Hauptgerichte'],
+                 ['nachspeise', 'Nachspeisen'], ['sonstiges', 'Wraps & Frühstück']];
+let cookDishes = null;         // null = not loaded / no table yet
+let cookFilter = null;         // null | 'star' | 'menu' | 'never'
+let editingCook = null;
+let cookCourse = null;
+
+function isoWeekLabel(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));      // the Thursday decides the year
+  const y = d.getUTCFullYear();
+  const w = Math.ceil(((d - Date.UTC(y, 0, 1)) / 86400000 + 1) / 7);
+  return `${y}-KW${String(w).padStart(2, '0')}`;
+}
+// his page shows next week's menu from the weekend on: both weeks count as "am Menü"
+function menuWeeks() { const t = new Date(); return [isoWeekLabel(t), isoWeekLabel(addDays(t, 7))]; }
+
+async function loadCook() {
+  const { data, error } = await db.from('cook_dishes').select('*').order('name');
+  cookDishes = error ? null : (data || []);
+  if (currentTab === 'cook') renderCook();
+}
+
+async function cookWrite(id, patch) {
+  const { error } = await db.from('cook_dishes').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id);
+  if (error) { alert('Speichern ging nicht: ' + error.message); return; }
+  await loadCook();
+}
+
+function renderCook() {
+  const box = document.getElementById('cook-filters');
+  box.innerHTML = '';
+  if (cookDishes === null) {
+    cookListEl.innerHTML = '<div class="wish-empty">Die Soulkitchen-Liste ist noch nicht eingerichtet.</div>';
+    return;
+  }
+  const weeks = menuWeeks();
+  const onMenu = d => weeks.includes(d.last_seen);
+  const nNever = cookDishes.filter(d => d.mark === 'never').length;
+  [['star', '⭐ Favoriten'], ['menu', 'Am Menü'], ['never', `Nicht mehr (${nNever})`]].forEach(([k, label]) => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.classList.toggle('active', cookFilter === k);
+    b.addEventListener('click', () => { cookFilter = cookFilter === k ? null : k; renderCook(); });
+    box.appendChild(b);
+  });
+
+  let list = cookDishes.filter(d => (cookFilter === 'never') === (d.mark === 'never'));
+  if (cookFilter === 'star') list = list.filter(d => d.mark === 'star');
+  if (cookFilter === 'menu') list = list.filter(onMenu);
+  list.sort((a, b) => ((b.mark === 'star') - (a.mark === 'star')) || (onMenu(b) - onMenu(a))
+    || a.name.localeCompare(b.name, 'de'));
+
+  cookListEl.innerHTML = list.length ? '' : '<div class="wish-empty">Nichts in dieser Auswahl.</div>';
+  const editor = isEditor();
+  COURSES.forEach(([course, title]) => {
+    const rows = list.filter(d => (d.course || 'hauptgericht') === course);
+    if (!rows.length) return;
+    const h = document.createElement('div');
+    h.className = 'cook-section';
+    h.textContent = `${title} · ${rows.length}`;
+    cookListEl.appendChild(h);
+    rows.forEach(d => {
+      const row = document.createElement('div');
+      row.className = 'cook-row' + (d.mark === 'star' ? ' fav' : '');
+      const kwTag = onMenu(d) ? `<span class="cook-kw">${escapeHtml(d.last_seen.split('-')[1])}</span>` : '';
+      const buttons = !editor ? (d.mark === 'star' ? '<span class="cook-btn on">★</span>' : '')
+        : d.mark === 'never'
+          ? '<button class="cook-btn x" data-a="back" title="zurück in die Liste">↩</button>'
+          : `<button class="cook-btn${d.mark === 'star' ? ' on' : ''}" data-a="star" title="lieben wir">${d.mark === 'star' ? '★' : '☆'}</button>
+             <button class="cook-btn x" data-a="never" title="nicht mehr bestellen">✕</button>`;
+      row.innerHTML = `<div class="cook-main">
+          <div class="cook-name">${escapeHtml(d.name)}${kwTag}</div>
+          ${d.note ? `<div class="cook-note">${escapeHtml(d.note)}</div>` : ''}
+        </div>${buttons}`;
+      if (editor) row.querySelector('.cook-main').addEventListener('click', () => openCook(d));
+      const act = (a, patch) => {
+        const b = row.querySelector(`[data-a="${a}"]`);
+        if (b) b.addEventListener('click', () => cookWrite(d.id, patch));
+      };
+      act('star', { mark: d.mark === 'star' ? null : 'star' });
+      act('never', { mark: 'never' });
+      act('back', { mark: null });
+      cookListEl.appendChild(row);
+    });
+  });
+}
+
+function renderCookCourse() {
+  const box = document.getElementById('cook-course');
+  box.innerHTML = '';
+  COURSES.forEach(([k, label]) => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.classList.toggle('active', cookCourse === k);
+    b.addEventListener('click', () => { cookCourse = k; renderCookCourse(); });
+    box.appendChild(b);
+  });
+}
+
+// tap a dish: fix its name / course, keep a note ("zu scharf für Vicky")
+function openCook(d) {
+  editingCook = d;
+  cookCourse = d.course || 'hauptgericht';
+  document.getElementById('cook-name').value = d.name;
+  document.getElementById('cook-note').value = d.note || '';
+  renderCookCourse();
+  cookModal.classList.remove('hidden');
+}
+document.getElementById('cook-cancel').addEventListener('click', () => cookModal.classList.add('hidden'));
+cookModal.addEventListener('click', e => { if (e.target === cookModal) cookModal.classList.add('hidden'); });
+document.getElementById('cook-save').addEventListener('click', async () => {
+  const name = document.getElementById('cook-name').value.trim();
+  if (!editingCook || !name) return;
+  cookModal.classList.add('hidden');
+  await cookWrite(editingCook.id, { name, course: cookCourse, note: document.getElementById('cook-note').value.trim() || null });
+});
+
 // ── Render calendar ───────────────────────────────────────────────────────────
 function renderCalendar() {
   calendarEl.innerHTML = '';
@@ -921,6 +1050,7 @@ db.channel('essen_changes')
   .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_ratings' }, () => loadMeals())
   .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_wishes' },  () => loadWishes())
   .on('postgres_changes', { event: '*', schema: 'public', table: 'dishes' },       () => loadDishes())
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'cook_dishes' },  () => { if (currentTab === 'cook') loadCook(); })
   .on('postgres_changes', { event: '*', schema: 'public', table: 'freezer' },      () => loadFreezer().then(() => {
     if (currentTab === 'dishes') renderDishes();
     if (!dishModal.classList.contains('hidden') && HAS_FREEZER) renderFreezerBox();
@@ -931,6 +1061,8 @@ db.channel('essen_changes')
 if (!currentUser) { showUserModal(); } else { userBadge.textContent = currentUser; }
 // ?woche=-1|0|1 opens Last / This / Next Week (the link in James's Thursday draft message, 9 Oct 2026)
 { const w = new URLSearchParams(location.search).get('woche'); if (['-1', '0', '1'].includes(w)) switchTab(w); }
+// ?tab=soulkitchen opens the Soulkitchen list
+if (new URLSearchParams(location.search).get('tab') === 'soulkitchen') switchTab('cook');
 loadMeals();
 loadWishes();
 loadDishes().then(openFromUrl);
